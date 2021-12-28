@@ -8,17 +8,19 @@ function addBrand(brand) {
   return store.add(brand);
 }
 
-function listBrands(brandId) {
-  return store.list(brandId);
+function listBrands(brandId, companyId) {
+  return store.list(brandId, companyId);
 }
 
-function updateBrand(brandId, product) {
-  if (!brandId || !product) {
+function updateBrand(brandId, brand) {
+  if (!brandId || !brand) {
     return Promise.reject(
-      `brandId or product is undefined. BrandId is: ${brandId.toString()}, product is: ${product.toString()}`,
+      `brandId or brand is undefined. BrandId is: ${brandId.toString()}, product is: ${JSON.stringify(
+        brand,
+      )}`,
     );
   }
-  return store.update(brandId, product);
+  return store.update(brandId, brand);
 }
 
 function removeBrand(brandId) {

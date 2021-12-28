@@ -8,8 +8,8 @@ function addSell(sell) {
   return store.add(sell);
 }
 
-function listSales(sellId) {
-  return store.list(sellId);
+function listSales(sellId, companyId) {
+  return store.list(sellId, companyId);
 }
 
 function updateSell(sellId, sell) {

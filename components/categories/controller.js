@@ -10,8 +10,8 @@ function addCategory(category) {
   return store.add(category);
 }
 
-function listCategories(categoryId) {
-  return store.list(categoryId);
+function listCategories(categoryId, companyId) {
+  return store.list(categoryId, companyId);
 }
 
 function updateCategory(categoryId, category) {

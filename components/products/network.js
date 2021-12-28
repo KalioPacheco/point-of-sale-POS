@@ -2,11 +2,14 @@ const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
+const Helper = require('../../helpers');
 
 const router = express.Router();
 
 const addProduct = function (req, res) {
-  const { product } = req.body;
+  const product = req.body;
+  const companyId = Helper.getCompanyId(req);
+  product.companyId = companyId;
   controller
     .addProduct(product)
     .then(data => {
@@ -19,8 +22,9 @@ const addProduct = function (req, res) {
 
 const listProducts = function (req, res) {
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   controller
-    .listProducts(productId)
+    .listProducts(productId, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -30,8 +34,10 @@ const listProducts = function (req, res) {
 };
 
 const updateProduct = function (req, res) {
-  const { product } = req.body;
+  const product = req.body;
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
+  product.companyId = companyId;
   controller
     .updateProduct(productId, product)
     .then(data => {
@@ -55,6 +61,7 @@ const removeProduct = function (req, res) {
 };
 
 router.post('/', passportConfig.isAuth, addProduct);
+router.get('/', passportConfig.isAuth, listProducts);
 router.get('/:productId', passportConfig.isAuth, listProducts);
 router.patch('/:productId', passportConfig.isAuth, updateProduct);
 router.delete('/:productId', passportConfig.isAuth, removeProduct);

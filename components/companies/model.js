@@ -4,6 +4,9 @@ const { Schema } = mongoose;
 
 const mySchema = new Schema({
   name: String,
+  rfc: {
+    type: String,
+  },
   address: {
     street: String,
     number: {

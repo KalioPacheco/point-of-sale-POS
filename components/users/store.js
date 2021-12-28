@@ -3,7 +3,7 @@ const Model = require('./model');
 
 function login(req, res, next) {
   return new Promise((resolve, reject) => {
-    passport.authenticate('local', (err, use) => {
+    passport.authenticate('local', (err, user) => {
       if (err) {
         next(err);
         reject(err);
@@ -12,8 +12,8 @@ function login(req, res, next) {
         next(err);
         reject(err);
       }
-      req.logIn(user, err => {
-        if (err) {
+      req.logIn(user, error => {
+        if (error) {
           next(err);
           reject(err);
         }
@@ -40,7 +40,7 @@ function addUser(user) {
   });
 }
 
-function listUsers(userId) {
+function listUsers(userId, companyId) {
   return new Promise((resolve, reject) => {
     let filter = {};
     if (userId) {
@@ -49,6 +49,7 @@ function listUsers(userId) {
       };
     }
 
+    filter.company = companyId;
     filter.disable = false;
 
     Model.find(filter)

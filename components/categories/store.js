@@ -5,7 +5,7 @@ function addCategory(category) {
   return neCategories.save();
 }
 
-function listCategories(categoryId) {
+function listCategories(categoryId, companyId) {
   return new Promise((resolve, reject) => {
     let filter = {};
     if (categoryId) {
@@ -14,6 +14,7 @@ function listCategories(categoryId) {
       };
     }
 
+    filter.company = companyId;
     filter.disable = false;
 
     Model.find(filter)
