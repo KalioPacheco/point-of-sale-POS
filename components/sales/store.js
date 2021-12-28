@@ -19,6 +19,7 @@ function listSales(sellId) {
     Model.find(filter)
       .populate('products')
       .populate('createdBy')
+      .populate('company')
       .exec((err, populated) => {
         if (err) {
           reject(err);

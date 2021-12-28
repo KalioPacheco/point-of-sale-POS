@@ -3,7 +3,7 @@ const Model = require('./model');
 
 function login(req, res, next) {
   return new Promise((resolve, reject) => {
-    passport.authenticate('local', function (err, use) {
+    passport.authenticate('local', (err, use) => {
       if (err) {
         next(err);
         reject(err);
@@ -31,7 +31,7 @@ function logout(req) {
 function addUser(user) {
   const newUser = new Model(user);
   return new Promise((resolve, reject) => {
-    Model.findOne({ userName: user.userName }, function (err, exist) {
+    Model.findOne({ userName: user.userName }, (err, exist) => {
       if (exist) {
         reject('El usuario ya existe');
       }
@@ -53,6 +53,7 @@ function listUsers(userId) {
 
     Model.find(filter)
       .populate('typeUser')
+      .populate('company')
       .exec((err, populated) => {
         if (err) {
           reject(err);

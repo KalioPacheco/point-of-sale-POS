@@ -4,6 +4,7 @@ const Usuario = require('../components/users/model');
 const response = require('../network');
 
 passport.serializeUser((usuario, done) => {
+  // eslint-disable-next-line no-underscore-dangle
   done(null, usuario._id);
 });
 
@@ -19,14 +20,16 @@ passport.use(
     (userName, password, done) => {
       Usuario.findOne({ userName }, (err, user) => {
         if (!user) {
-          return done(null, false, { message: 'username is no register' });
+          done(null, false, { message: 'username is no register' });
+        } else {
+          Usuario.checkPassword(password, (error, isSame) => {
+            if (isSame) {
+              done(null, user);
+            } else {
+              done(null, false, { message: 'Invalid password' });
+            }
+          });
         }
-        Usuario.checkPassword(password, (err, isSame) => {
-          if (isSame) {
-            return done(null, user);
-          }
-          return done(null, false, { message: 'Invalid password' });
-        });
       });
     },
   ),
@@ -34,7 +37,7 @@ passport.use(
 
 exports.isAuth = (req, res, next) => {
   if (req.isAuthenticated()) {
-    return next();
+    next();
   }
   response.error(req, res, 'Login is necessary', 500, 'Login necesario');
 };

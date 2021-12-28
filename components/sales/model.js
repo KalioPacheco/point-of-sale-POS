@@ -32,6 +32,10 @@ const mySchema = new Schema({
     type: Schema.ObjectId,
     ref: 'Users',
   },
+  company: {
+    type: Schema.ObjectId,
+    ref: 'Companies',
+  },
 });
 
 const model = mongoose.model('Sales', mySchema, 'sales');

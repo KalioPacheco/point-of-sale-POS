@@ -6,16 +6,28 @@ function addBrand(brand) {
 }
 
 function listBrands(brandId) {
-  let filter = {};
-  if (brandId) {
-    filter = {
-      _id: brandId,
-    };
-  }
+  return new Promise((resolve, reject) => {
+    let filter = {};
+    if (brandId) {
+      filter = {
+        _id: brandId,
+      };
+    }
 
-  filter.disable = false;
+    filter.disable = false;
 
-  return Model.find(filter);
+    Model.find(filter)
+      .populate('createdBy')
+      .populate('company')
+      .exec((err, populated) => {
+        if (err) {
+          reject(err);
+          return false;
+        }
+        resolve(populated);
+        return true;
+      });
+  });
 }
 
 async function updateBrand(brandId, data) {

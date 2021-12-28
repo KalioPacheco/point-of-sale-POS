@@ -6,16 +6,30 @@ function addProduct(product) {
 }
 
 function listProducts(productId) {
-  let filter = {};
-  if (productId) {
-    filter = {
-      _id: productId,
-    };
-  }
+  return new Promise((resolve, reject) => {
+    let filter = {};
+    if (productId) {
+      filter = {
+        _id: productId,
+      };
+    }
 
-  filter.disable = false;
+    filter.disable = false;
 
-  return Model.find(filter);
+    Model.find(filter)
+      .populate('brand')
+      .populate('company')
+      .populate('createdBy')
+      .populate('categories')
+      .exec((err, populated) => {
+        if (err) {
+          reject(err);
+          return false;
+        }
+        resolve(populated);
+        return true;
+      });
+  });
 }
 
 async function updateProduct(productId, product) {

@@ -18,6 +18,7 @@ function listTypes(typeId) {
 
     Model.find(filter)
       .populate('createdBy')
+      .populate('company')
       .exec((err, populated) => {
         if (err) {
           reject(err);
