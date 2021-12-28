@@ -2,11 +2,14 @@ const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
+const Helper = require('../../helpers');
 
 const router = express.Router();
 
 const addSell = function (req, res) {
-  const { sell } = req.body;
+  const sell = req.body;
+  const companyId = Helper.getCompanyId(req);
+  sell.companyId = companyId;
   controller
     .addSell(sell)
     .then(data => {
@@ -19,8 +22,9 @@ const addSell = function (req, res) {
 
 const listSales = function (req, res) {
   const { sellId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   controller
-    .listSales(sellId)
+    .listSales(sellId, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -31,7 +35,9 @@ const listSales = function (req, res) {
 
 const updateSell = function (req, res) {
   const { sellId } = req.params;
-  const { sell } = req.body;
+  const sell = req.body;
+  const companyId = Helper.getCompanyId(req);
+  sell.companyId = companyId;
   controller
     .updateSell(sellId, sell)
     .then(data => {
@@ -54,8 +60,9 @@ const removeSell = function (req, res) {
     });
 };
 
-router.post('/', passportConfig.isAuth, addSell);
+router.get('/', passportConfig.isAuth, listSales);
 router.get('/:sellId', passportConfig.isAuth, listSales);
+router.post('/', passportConfig.isAuth, addSell);
 router.patch('/:sellId', passportConfig.isAuth, updateSell);
 router.delete('/:sellId', passportConfig.isAuth, removeSell);
 

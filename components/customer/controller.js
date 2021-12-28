@@ -10,8 +10,8 @@ function addCustomer(customer) {
   return store.add(customer);
 }
 
-function listCustomer(customerId) {
-  return store.list(customerId);
+function listCustomer(customerId, companyId) {
+  return store.list(customerId, companyId);
 }
 
 function updateCustomer(customerId, customer) {

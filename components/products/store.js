@@ -5,7 +5,7 @@ function addProduct(product) {
   return newProduct.save();
 }
 
-function listProducts(productId) {
+function listProducts(productId, companyId) {
   return new Promise((resolve, reject) => {
     let filter = {};
     if (productId) {
@@ -14,6 +14,7 @@ function listProducts(productId) {
       };
     }
 
+    filter.company = companyId;
     filter.disable = false;
 
     Model.find(filter)

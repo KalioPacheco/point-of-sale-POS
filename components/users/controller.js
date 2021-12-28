@@ -2,7 +2,7 @@ const store = require('./store');
 
 function addUser(user) {
   if (!user) {
-    return Promise.reject(`User data is empty. User: ${user.toString()}`);
+    return Promise.reject(`User data is empty. User: ${JSON.stringify(user)}`);
   }
 
   return store.add(user);
@@ -16,8 +16,8 @@ function logout(req) {
   return store.logout(req);
 }
 
-function listUsers(userId) {
-  return store.list(userId);
+function listUsers(userId, companyId) {
+  return store.list(userId, companyId);
 }
 
 function updateUser(userId, user) {

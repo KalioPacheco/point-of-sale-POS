@@ -8,8 +8,8 @@ function addType(type) {
   return store.add(type);
 }
 
-function listTypes(typeId) {
-  return store.list(typeId);
+function listTypes(typeId, companyId) {
+  return store.list(typeId, companyId);
 }
 
 function updateType(typeId, type) {

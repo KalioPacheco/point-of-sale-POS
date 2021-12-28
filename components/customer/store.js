@@ -5,7 +5,7 @@ function addCustomer(customer) {
   return newCustomer.save();
 }
 
-function listCustomer(customerId) {
+function listCustomer(customerId, companyId) {
   return new Promise((resolve, reject) => {
     let filter = {};
     if (customerId) {
@@ -14,6 +14,7 @@ function listCustomer(customerId) {
       };
     }
 
+    filter.company = companyId;
     filter.disable = false;
 
     Model.find(filter)

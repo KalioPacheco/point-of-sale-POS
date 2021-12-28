@@ -5,7 +5,7 @@ function addSell(sell) {
   return newSales.save();
 }
 
-function listSales(sellId) {
+function listSales(sellId, companyId) {
   return new Promise((resolve, reject) => {
     let filter = {};
     if (sellId) {
@@ -14,6 +14,7 @@ function listSales(sellId) {
       };
     }
 
+    filter.company = companyId;
     filter.disable = false;
 
     Model.find(filter)

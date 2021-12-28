@@ -9,8 +9,12 @@ async function connect() {
     {
       useNewUrlParser: true,
     },
-    () => {
-      console.log('[db] Conectada con éxito');
+    error => {
+      if (error) {
+        console.log(error);
+      } else {
+        console.log('[db] Conectada con éxito');
+      }
     },
   );
 }

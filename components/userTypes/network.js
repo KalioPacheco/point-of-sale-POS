@@ -2,11 +2,14 @@ const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
+const Helper = require('../../helpers');
 
 const router = express.Router();
 
 const addType = function (req, res) {
-  const { type } = req.body;
+  const type = req.body;
+  const companyId = Helper.getCompanyId(req);
+  type.companyId = companyId;
   controller
     .addType(type)
     .then(data => {
@@ -19,8 +22,9 @@ const addType = function (req, res) {
 
 const listTypes = function (req, res) {
   const { typeId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   controller
-    .listTypes(typeId)
+    .listTypes(typeId, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -31,7 +35,9 @@ const listTypes = function (req, res) {
 
 const updateType = function (req, res) {
   const { typeId } = req.params;
-  const { type } = req.body;
+  const type = req.body;
+  const companyId = Helper.getCompanyId(req);
+  type.companyId = companyId;
   controller
     .updateType(typeId, type)
     .then(product => {
@@ -54,8 +60,9 @@ const removeType = function (req, res) {
     });
 };
 
-router.post('/', passportConfig.isAuth, addType);
+router.get('/', passportConfig.isAuth, listTypes);
 router.get('/:typeId', passportConfig.isAuth, listTypes);
+router.post('/', passportConfig.isAuth, addType);
 router.patch('/:typeId', passportConfig.isAuth, updateType);
 router.delete('/:typeId', passportConfig.isAuth, removeType);
 

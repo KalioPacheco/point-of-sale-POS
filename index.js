@@ -8,8 +8,9 @@ const db = require('./database');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
-app.use(passport.initialize());
-app.use(passport.session());
+app.use(
+  express.urlencoded({ limit: '1mb', extended: true, parameterLimit: 1000 }),
+);
 
 app.use(
   session({
@@ -18,11 +19,13 @@ app.use(
     saveUninitialized: true,
     store: MongoStore.create({
       mongoUrl: process.env.DB_CONECTION_DEV,
-      dbName: 'pv-dev',
       stringify: false,
     }),
   }),
 );
+
+app.use(passport.initialize());
+app.use(passport.session());
 
 router(app);
 db();

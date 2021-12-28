@@ -5,7 +5,7 @@ function addBrand(brand) {
   return newBrand.save();
 }
 
-function listBrands(brandId) {
+function listBrands(brandId, companyId) {
   return new Promise((resolve, reject) => {
     let filter = {};
     if (brandId) {
@@ -14,6 +14,7 @@ function listBrands(brandId) {
       };
     }
 
+    filter.company = companyId;
     filter.disable = false;
 
     Model.find(filter)

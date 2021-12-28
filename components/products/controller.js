@@ -10,8 +10,8 @@ function addProduct(product) {
   return store.add(product);
 }
 
-function listProducts(userId) {
-  return store.list(userId);
+function listProducts(userId, companyId) {
+  return store.list(userId, companyId);
 }
 
 function updateProduct(productId, product) {

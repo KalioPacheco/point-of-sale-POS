@@ -1,6 +1,6 @@
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
-const Usuario = require('../components/users/model');
+const Users = require('../components/users/model');
 const response = require('../network');
 
 passport.serializeUser((usuario, done) => {
@@ -9,7 +9,7 @@ passport.serializeUser((usuario, done) => {
 });
 
 passport.deserializeUser((id, done) => {
-  Usuario.findById(id, (err, user) => {
+  Users.findById(id, (err, user) => {
     done(err, user);
   });
 });
@@ -18,17 +18,23 @@ passport.use(
   new LocalStrategy(
     { usernameField: 'userName' },
     (userName, password, done) => {
-      Usuario.findOne({ userName }, (err, user) => {
+      Users.findOne({ userName }, (err, user) => {
         if (!user) {
           done(null, false, { message: 'username is no register' });
         } else {
-          Usuario.checkPassword(password, (error, isSame) => {
-            if (isSame) {
-              done(null, user);
-            } else {
-              done(null, false, { message: 'Invalid password' });
-            }
-          });
+          // console.log({ ...Users }.schema.methods.checkPassword);
+          Users.schema.methods.checkPassword(
+            password,
+            user.password,
+            (error, isSame) => {
+              console.log(isSame, error);
+              if (isSame) {
+                done(null, user);
+              } else {
+                done(null, false, { message: 'Invalid password' });
+              }
+            },
+          );
         }
       });
     },
@@ -38,6 +44,7 @@ passport.use(
 exports.isAuth = (req, res, next) => {
   if (req.isAuthenticated()) {
     next();
+  } else {
+    response.error(req, res, 'Login is necessary', 500, 'Login necesario');
   }
-  response.error(req, res, 'Login is necessary', 500, 'Login necesario');
 };

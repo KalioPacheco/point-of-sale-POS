@@ -5,7 +5,7 @@ function addType(type) {
   return newUser.save();
 }
 
-function listTypes(typeId) {
+function listTypes(typeId, companyId) {
   return new Promise((resolve, reject) => {
     let filter = {};
     if (typeId) {
@@ -14,6 +14,7 @@ function listTypes(typeId) {
       };
     }
 
+    filter.company = companyId;
     filter.disable = false;
 
     Model.find(filter)

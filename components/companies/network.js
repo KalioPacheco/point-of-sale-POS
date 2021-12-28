@@ -6,7 +6,7 @@ const passportConfig = require('../../passport');
 const router = express.Router();
 
 const addCompany = function (req, res) {
-  const { company } = req.body;
+  const company = req.body;
   controller
     .addCompany(company)
     .then(data => {
@@ -31,7 +31,7 @@ const listCompanies = function (req, res) {
 
 const updateCompany = function (req, res) {
   const { companyId } = req.params;
-  const { company } = req.body;
+  const company = req.body;
   controller
     .updateCompany(companyId, company)
     .then(data => {
@@ -54,8 +54,9 @@ const removeCompany = function (req, res) {
     });
 };
 
-router.post('/', passportConfig.isAuth, addCompany);
+router.get('/', passportConfig.isAuth, listCompanies);
 router.get('/:companyId', passportConfig.isAuth, listCompanies);
+router.post('/', passportConfig.isAuth, addCompany);
 router.patch('/:companyId', passportConfig.isAuth, updateCompany);
 router.delete('/:companyId', passportConfig.isAuth, removeCompany);
 
