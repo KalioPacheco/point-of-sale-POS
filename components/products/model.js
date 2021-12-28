@@ -13,6 +13,10 @@ const mySchema = new Schema({
     type: Schema.ObjectId,
     ref: 'Brands',
   },
+  company: {
+    type: Schema.ObjectId,
+    ref: 'Companies',
+  },
   description: String,
   stock: Number,
   photo: String,
@@ -25,11 +29,20 @@ const mySchema = new Schema({
     default: false,
   },
   updatedAt: Date,
-  createdBy: String,
+  createdBy: {
+    type: Schema.ObjectId,
+    ref: 'Users',
+  },
   minSell: {
     quantity: Number,
     measure: String,
   },
+  categories: [
+    {
+      type: Schema.ObjectId,
+      ref: 'Categories',
+    },
+  ],
 });
 
 const model = mongoose.model('Products', mySchema, 'products');

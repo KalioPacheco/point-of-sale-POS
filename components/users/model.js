@@ -27,7 +27,10 @@ const mySchema = new Schema(
       default: false,
     },
     updatedAt: Date,
-    createdBy: String,
+    createdBy: {
+      type: Schema.ObjectId,
+      ref: 'Users',
+    },
     password: {
       type: String,
       required: true,
@@ -37,7 +40,7 @@ const mySchema = new Schema(
       default: '61c954203d4e629aa12f69ca',
       ref: 'UsersTypes',
     },
-    companies: {
+    company: {
       type: Schema.ObjectId,
       ref: 'Companies',
     },

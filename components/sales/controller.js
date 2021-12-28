@@ -2,9 +2,7 @@ const store = require('./store');
 
 function addSell(sell) {
   if (!sell) {
-    return Promise.reject(
-      `Company data is empty. User: ${JSON.stringify(sell)}`,
-    );
+    return Promise.reject(`Sell data is empty. User: ${JSON.stringify(sell)}`);
   }
 
   return store.add(sell);
