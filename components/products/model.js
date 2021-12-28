@@ -5,6 +5,10 @@ const { Schema } = mongoose;
 const mySchema = new Schema({
   name: String,
   price: Number,
+  folio: {
+    type: Number,
+    default: 1,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
