@@ -13,12 +13,12 @@ function listSales(sellId, companyId) {
         _id: sellId,
       };
     }
-
     filter.company = companyId;
     filter.disable = false;
-
+    
     Model.find(filter)
-      .populate('products')
+      .populate('products.product') 
+      .populate('customer')
       .populate('createdBy')
       .populate('company')
       .exec((err, populated) => {
@@ -33,30 +33,55 @@ function listSales(sellId, companyId) {
 }
 
 async function updateSell(sellId, sell) {
-  const foundBrand = await Model.findOne({
+  const foundSell = await Model.findOne({
     _id: sellId,
   });
-
-  const { refund = false } = sell;
-
-  if (refund) {
-    foundBrand.refund = refund;
+  
+  if (!foundSell) {
+    throw new Error('Venta no encontrada');
   }
 
-  foundBrand.updated = true;
-  foundBrand.updatedAt = new Date();
 
-  return foundBrand.save();
+  const { 
+    refund = false, 
+    total, 
+    amountPaid, 
+    change, 
+    paymentMethod,
+    products 
+  } = sell;
+  
+  if (refund) {
+    foundSell.refund = refund;
+  }
+  
+ 
+  if (total !== undefined) foundSell.total = total;
+  if (amountPaid !== undefined) foundSell.amountPaid = amountPaid;
+  if (change !== undefined) foundSell.change = change;
+  if (paymentMethod) foundSell.paymentMethod = paymentMethod;
+  if (products) foundSell.products = products;
+  
+  foundSell.updated = true;
+  foundSell.updatedAt = new Date();
+  
+  return foundSell.save();
 }
 
 async function removeSell(sellId) {
-  const foundBrand = await Model.findOne({
+  const foundSell = await Model.findOne({
     _id: sellId,
   });
-
-  foundBrand.disable = true;
-
-  return foundBrand.save();
+  
+  if (!foundSell) {
+    throw new Error('Venta no encontrada');
+  }
+  
+  foundSell.disable = true;
+  foundSell.updated = true;
+  foundSell.updatedAt = new Date();
+  
+  return foundSell.save();
 }
 
 module.exports = {
