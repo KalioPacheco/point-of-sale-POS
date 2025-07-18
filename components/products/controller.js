@@ -6,7 +6,7 @@ function addProduct(product) {
       `Products data is empty. Product: ${product.toString()}`,
     );
   }
-  
+
   return store.add(product);
 }
 
@@ -32,82 +32,101 @@ function removeProduct(productId) {
   return store.remove(productId);
 }
 
-// nueva funciones agregadas
-function addPiecesToProduct(productId, piecesData) {
-  if (!productId) {
-    return Promise.reject('productId is required');
-  }
-  if (!piecesData || !piecesData.quantity || !piecesData.addedBy) {
-  return Promise.reject('Pieces data is incomplete. Required: quantity, addedBy');
+
+function addStock(productId, quantity, reason) {
+  if (!productId || !quantity || quantity <= 0) {
+    return Promise.reject('productId and positive quantity are required');
   }
   
-  if (Number.isNaN(piecesData.quantity) || piecesData.quantity <= 0) {
-  return Promise.reject('Quantity must be a positive number');
+  return store.addStock(productId, quantity, reason);
+}
+
+function reduceStock(productId, quantity, reason) {
+  if (!productId || !quantity || quantity <= 0) {
+    return Promise.reject('productId and positive quantity are required');
   }
-  return store.addPieces(productId, piecesData);
+  
+  return store.reduceStock(productId, quantity, reason);
+}
+
+function setStock(productId, quantity, reason) {
+  if (!productId || quantity < 0) {
+    return Promise.reject('productId and non-negative quantity are required');
+  }
+  
+  return store.setStock(productId, quantity, reason);
 }
 
 function getStockHistory(productId) {
   if (!productId) {
-  return Promise.reject('productId is required');
+    return Promise.reject('productId is required');
   }
-return store.getStockHistory(productId);
+  
+  return store.getStockHistory(productId);
 }
 
+function getLowStockProducts(companyId, minStock = 5) {
+  return store.getLowStockProducts(companyId, minStock);
+}
 
-// funcion pra las variantes (lo que podria srr colores,tallas,modelos entre otros )
-function addVariant(productId, variantData) {
- 
+function getProductStock(productId) {
   if (!productId) {
     return Promise.reject('productId is required');
   }
-  if (!variantData || !variantData.name) {
-    return Promise.reject('Variant data is incomplete. Required: name');
+  
+  return store.getProductStock(productId);
+}
+// variantes agregadas 
+function addVariant(productId, variantData) {
+  if (!productId) {
+    return Promise.reject('productId is required');
   }
+  
+  if (!variantData || !variantData.name) {
+    return Promise.reject('Variant data with name is required');
+  }
+  
   return store.addVariant(productId, variantData);
 }
 
-function listVariants(productId) {
-  
+function addVariantStock(productId, variantId, quantity, reason) {
   if (!productId) {
     return Promise.reject('productId is required');
   }
-  return store.listVariants(productId);
+  
+  if (!variantId) {
+    return Promise.reject('variantId is required');
+  }
+  
+  if (!quantity || quantity <= 0) {
+    return Promise.reject('positive quantity is required');
+  }
+  
+  return store.addVariantStock(productId, variantId, quantity, reason);
 }
 
-function updateVariant(productId, variantId, variantData) {
- 
-  if (!productId || !variantId) {
-    return Promise.reject('productId and variantId are required');
+function disableVariant(productId, variantId, reason) {
+  if (!productId) {
+    return Promise.reject('productId is required');
   }
-  return store.updateVariant(productId, variantId, variantData);
+  
+  if (!variantId) {
+    return Promise.reject('variantId is required');
+  }
+  
+  return store.disableVariant(productId, variantId, reason);
 }
 
-function removeVariant(productId, variantId) {
- 
-  if (!productId || !variantId) {
-    return Promise.reject('productId and variantId are required');
+function enableVariant(productId, variantId, reason) {
+  if (!productId) {
+    return Promise.reject('productId is required');
   }
-  return store.removeVariant(productId, variantId);
-}
-
-function addStockToVariant(productId, variantId, stockData) {
- 
-  if (!productId || !variantId) {
-    return Promise.reject('productId and variantId are required');
+  
+  if (!variantId) {
+    return Promise.reject('variantId is required');
   }
-  if (!stockData || !stockData.quantity || !stockData.addedBy) {
-    return Promise.reject('Stock data is incomplete. Required: quantity, addedBy');
-  }
-  return store.addStockToVariant(productId, variantId, stockData);
-}
-
-function getVariantStockHistory(productId, variantId) {
-
-  if (!productId || !variantId) {
-    return Promise.reject('productId and variantId are required');
-  }
-  return store.getVariantStockHistory(productId, variantId);
+  
+  return store.enableVariant(productId, variantId, reason);
 }
 
 module.exports = {
@@ -115,13 +134,14 @@ module.exports = {
   listProducts,
   updateProduct,
   removeProduct,
-  addPiecesToProduct, // nuevas funciones exportadas  
+  addStock,
+  reduceStock,
+  setStock,
   getStockHistory,
-  addVariant,           
-  listVariants,         
-  updateVariant,        
-  removeVariant,       
-  addStockToVariant,   
-  getVariantStockHistory, 
-
+  getLowStockProducts,
+  getProductStock,
+  addVariant,
+  addVariantStock,
+  disableVariant,
+  enableVariant,
 };

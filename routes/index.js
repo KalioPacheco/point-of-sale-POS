@@ -6,7 +6,11 @@ const userTypes = require('../components/userTypes/network');
 const companies = require('../components/companies/network');
 const sales = require('../components/sales/network');
 const categories = require('../components/categories/network');
-const customer = require('../components/customer/network');
+const customer = require('../components/customer/network'
+const cortesCaja = require('../components/cortes_caja/network');
+
+);
+
 
 const routes = function (server) {
   server.use('/brands', brand);
@@ -17,6 +21,7 @@ const routes = function (server) {
   server.use('/sales', sales);
   server.use('/categories', categories);
   server.use('/customer', customer);
+  server.use('/cortes_caja', cortesCaja);
 };
 
 module.exports = routes;

@@ -1,115 +1,11 @@
 const store = require('./store');
 
-function processSellData(sell) {
-
-  if (sell.products && Array.isArray(sell.products) && sell.products[0]?.subtotal) {
-    return sell;
-  }
-
-  if (sell.products && Array.isArray(sell.products) && typeof sell.products[0] === 'string') {
-    return sell;
-  }
-
-  if (sell.products && Array.isArray(sell.products)) {
-    let total = 0;
-    const processedProducts = sell.products.map(item => {
-      if (item.product && item.quantity && item.unitPrice) {
-        const itemSubtotal = item.quantity * item.unitPrice;
-        total += itemSubtotal;
-        return {
-          product: item.product,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          subtotal: itemSubtotal
-        };
-      }
-      return item;
-    });
-
-    return {
-      ...sell,
-      products: processedProducts,
-      total: sell.total || total,
-      change: sell.amountPaid ? (sell.amountPaid - (sell.total || total)) : sell.change || 0
-    };
-  }
-
-  return sell;
-}
-
-
 function addSell(sell) {
   if (!sell) {
     return Promise.reject(`Sell data is empty. User: ${JSON.stringify(sell)}`);
   }
 
-  const processedSell = processSellData(sell);
-  return store.add(processedSell);
-}
-
-
-function generateSale(saleData) {
-  if (!saleData) {
-    return Promise.reject('Los datos de la venta son requeridos');
-  }
-
-  const { customer, products, createdBy, company, amountPaid, paymentMethod = 'cash' } = saleData;
-
-
-  if (!products || products.length === 0) {
-    return Promise.reject('Los productos son requeridos');
-  }
-  if (!createdBy) {
-    return Promise.reject('El usuario que crea la venta es requerido');
-  }
-  if (!company) {
-    return Promise.reject('La empresa es requerida');
-  }
-  if (!amountPaid || amountPaid <= 0) {
-    return Promise.reject('El monto pagado debe ser mayor a 0');
-  }
-
-  try {
-
-    let total = 0;
-    const processedProducts = products.map(item => {
-      if (!item.product || !item.quantity || !item.unitPrice) {
-        throw new Error('Cada producto debe tener: product, quantity, unitPrice');
-      }
-      
-      const itemSubtotal = item.quantity * item.unitPrice;
-      total += itemSubtotal;
-      
-      return {
-        product: item.product,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        subtotal: itemSubtotal
-      };
-    });
-
-    if (amountPaid < total) {
-      return Promise.reject(`El monto pagado (${amountPaid}) es menor al total (${total})`);
-    }
-
-    const change = amountPaid - total;
-
-    
-    const newSale = {
-      customer,
-      products: processedProducts,
-      total,
-      amountPaid,
-      change,
-      paymentMethod,
-      createdBy,
-      company
-    };
-
-    return store.add(newSale);
-  } catch (error) {
-    return Promise.reject(error.message);
-  }
+  return store.add(sell);
 }
 
 function listSales(sellId, companyId) {
@@ -134,10 +30,81 @@ function removeSell(sellId) {
   return store.remove(sellId);
 }
 
+function createSalePOS(saleData) {
+  if (!saleData) {
+    return Promise.reject('Sale data is required');
+  }
+
+  if (!saleData.items || saleData.items.length === 0) {
+    return Promise.reject('Sale must have at least one item');
+  }
+
+  if (!saleData.paymentMethod) {
+    return Promise.reject('Payment method is required');
+  }
+
+  for (let i = 0; i < saleData.items.length; i += 1) {
+    const item = saleData.items[i];
+    if (!item.productId) {
+      return Promise.reject('Each item must have a productId');
+    }
+    if (!item.quantity || item.quantity <= 0) {
+      return Promise.reject('Each item must have a positive quantity');
+    }
+  }
+
+  const validPaymentMethods = ['efectivo', 'tarjeta', 'mixto'];
+  if (!validPaymentMethods.includes(saleData.paymentMethod)) {
+    return Promise.reject('Invalid payment method. Use: efectivo, tarjeta, or mixto');
+  }
+
+  if (saleData.paymentMethod === 'efectivo') {
+    if (!saleData.paymentDetails || !saleData.paymentDetails.cashReceived) {
+      return Promise.reject('Cash received amount is required for cash payments');
+    }
+    if (saleData.paymentDetails.cashReceived <= 0) {
+      return Promise.reject('Cash received must be positive');
+    }
+  }
+
+  if (saleData.paymentMethod === 'tarjeta') {
+    if (!saleData.paymentDetails || !saleData.paymentDetails.cardType) {
+      return Promise.reject('Card type is required for card payments');
+    }
+  }
+
+  if (saleData.paymentMethod === 'mixto') {
+    if (!saleData.paymentDetails || 
+        (!saleData.paymentDetails.cashAmount && !saleData.paymentDetails.cardAmount)) {
+      return Promise.reject('Cash and card amounts are required for mixed payments');
+    }
+  }
+
+  return store.createSalePOS(saleData);
+}
+
+function generateTicketPOS(saleId) {
+  if (!saleId) {
+    return Promise.reject('Sale ID is required');
+  }
+  
+  return store.generateTicketPOS(saleId);
+}
+function generateTicketPDF(saleId) {
+  if (!saleId) {
+    return Promise.reject('Sale ID is required');
+  }
+  
+  return store.generateTicketPDF(saleId);
+}
+
 module.exports = {
+
   addSell,
-  generateSale, 
   listSales,
   updateSell,
   removeSell,
+  createSalePOS,
+  generateTicketPOS,
+  generateTicketPDF,
 };

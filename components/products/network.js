@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
@@ -9,7 +10,11 @@ const router = express.Router();
 const addProduct = function addProduct(req, res) {
   const product = req.body;
   const companyId = Helper.getCompanyId(req);
-  product.company = companyId;
+  
+  if (companyId !== 'default-company-id' && mongoose.Types.ObjectId.isValid(companyId)) {
+    product.company = companyId;
+  }
+  
   controller
     .addProduct(product)
     .then(data => {
@@ -18,6 +23,8 @@ const addProduct = function addProduct(req, res) {
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);
     });
+  
+  return undefined;
 };
 
 const listProducts = function listProducts(req, res) {
@@ -31,21 +38,29 @@ const listProducts = function listProducts(req, res) {
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);
     });
+  
+  return undefined;
 };
 
 const updateProduct = function updateProduct(req, res) {
   const product = req.body;
   const { productId } = req.params;
   const companyId = Helper.getCompanyId(req);
-  product.company = companyId;
+  
+  if (companyId !== 'default-company-id' && mongoose.Types.ObjectId.isValid(companyId)) {
+    product.company = companyId;
+  }
+  
   controller
     .updateProduct(productId, product)
     .then(data => {
-      response.success(req, res, data, 201);
+      response.success(req, res, data, 200);
     })
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);
     });
+  
+  return undefined;
 };
 
 const removeProduct = function removeProduct(req, res) {
@@ -58,158 +73,197 @@ const removeProduct = function removeProduct(req, res) {
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);
     });
+  
+  return undefined;
 };
 
-const addPiecesToProduct = function addPiecesToProduct(req, res) {
 
+const addStock = function addStock(req, res) {
   const { productId } = req.params;
   const { quantity, reason } = req.body;
-  const addedBy = Helper.getUserId(req);
-  const companyId = Helper.getCompanyId(req);
-  
 
-  if (!quantity || !reason) {
-    response.error(req, res, 'Quantity and reason are required', 400);
-    return;
+  if (!quantity || quantity <= 0) {
+    return response.error(req, res, 'Quantity must be positive', 400);
   }
-  
-  const piecesData = {
-    quantity: parseInt(quantity, 10),
-    reason,
-    addedBy,
-    companyId
-  };
-  
+
   controller
-    .addPiecesToProduct(productId, piecesData)
+    .addStock(productId, quantity, reason || 'Manual adjustment')
     .then(data => {
       response.success(req, res, data, 200);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      console.error('Error adding stock:', err);
+      response.error(req, res, err.message || 'Error adding stock', 500, err);
     });
+  
+  return undefined;
+};
+
+const reduceStock = function reduceStock(req, res) {
+  const { productId } = req.params;
+  const { quantity, reason } = req.body;
+
+  if (!quantity || quantity <= 0) {
+    return response.error(req, res, 'Quantity must be positive', 400);
+  }
+
+  controller
+    .reduceStock(productId, quantity, reason || 'Manual adjustment')
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error reducing stock:', err);
+      response.error(req, res, err.message || 'Error reducing stock', 500, err);
+    });
+  
+  return undefined;
+};
+
+const setStock = function setStock(req, res) {
+  const { productId } = req.params;
+  const { quantity, reason } = req.body;
+
+  if (quantity < 0) {
+    return response.error(req, res, 'Quantity cannot be negative', 400);
+  }
+
+  controller
+    .setStock(productId, quantity, reason || 'Stock adjustment')
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error setting stock:', err);
+      response.error(req, res, err.message || 'Error setting stock', 500, err);
+    });
+  
+  return undefined;
 };
 
 const getStockHistory = function getStockHistory(req, res) {
-
   const { productId } = req.params;
-    
+
   controller
     .getStockHistory(productId)
-    .then(history => {
-      response.success(req, res, history, 200);
+    .then(data => {
+      response.success(req, res, data, 200);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      console.error('Error getting stock history:', err);
+      response.error(req, res, 'Error getting stock history', 500, err);
     });
+  
+  return undefined;
 };
 
+const getLowStockProducts = function getLowStockProducts(req, res) {
+  const companyId = Helper.getCompanyId(req);
+  const minStock = parseInt(req.query.minStock, 10) || 5;
 
+  controller
+    .getLowStockProducts(companyId, minStock)
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error getting low stock products:', err);
+      response.error(req, res, 'Error getting low stock products', 500, err);
+    });
+  
+  return undefined;
+};
+
+const getProductStock = function getProductStock(req, res) {
+  const { productId } = req.params;
+
+  controller
+    .getProductStock(productId)
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error getting product stock:', err);
+      response.error(req, res, err.message || 'Error getting product stock', 500, err);
+    });
+  
+  return undefined;
+};
 
 const addVariant = function addVariant(req, res) {
-
   const { productId } = req.params;
   const variantData = req.body;
-  const userId = Helper.getUserId(req);
-  variantData.createdBy = userId;
-  
-  if (!variantData.name || !variantData.value) {
-    response.error(req, res, 'Name and value are required for variant', 400);
-    return;
+
+  if (!variantData.name) {
+    return response.error(req, res, 'Variant name is required', 400);
   }
-  
+
   controller
     .addVariant(productId, variantData)
     .then(data => {
       response.success(req, res, data, 201);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      console.error('Error adding variant:', err);
+      response.error(req, res, err.message || 'Error adding variant', 500, err);
     });
-};
-
-const listVariants = function listVariants(req, res) {
- 
-  const { productId } = req.params;
   
-  controller
-    .listVariants(productId)
-    .then(variants => {
-      response.success(req, res, variants, 200);
-    })
-    .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
-    });
+  return undefined;
 };
 
-const updateVariant = function updateVariant(req, res) {
- 
-  const { productId, variantId } = req.params;
-  const variantData = req.body;
-  variantData.updatedAt = new Date();
-  
-  controller
-    .updateVariant(productId, variantId, variantData)
-    .then(data => {
-      response.success(req, res, data, 200);
-    })
-    .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
-    });
-};
-
-const removeVariant = function removeVariant(req, res) {
-  const { productId, variantId } = req.params;
-  
-  controller
-    .removeVariant(productId, variantId)
-    .then(data => {
-      response.success(req, res, data, 200);
-    })
-    .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
-    });
-};
-
-const addStockToVariant = function addStockToVariant(req, res) {
- 
+const addVariantStock = function addVariantStock(req, res) {
   const { productId, variantId } = req.params;
   const { quantity, reason } = req.body;
-  const addedBy = Helper.getUserId(req);
-  
-  if (!quantity || !reason) {
-    response.error(req, res, 'Quantity and reason are required', 400);
-    return;
+
+  if (!quantity || quantity <= 0) {
+    return response.error(req, res, 'Quantity must be positive', 400);
   }
-  
-  const stockData = {
-    quantity: parseInt(quantity, 10),
-    reason,
-    addedBy
-  };
-  
+
   controller
-    .addStockToVariant(productId, variantId, stockData)
+    .addVariantStock(productId, variantId, quantity, reason || 'Manual adjustment')
     .then(data => {
       response.success(req, res, data, 200);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      console.error('Error adding variant stock:', err);
+      response.error(req, res, err.message || 'Error adding variant stock', 500, err);
     });
+  
+  return undefined;
 };
 
-const getVariantStockHistory = function getVariantStockHistory(req, res) {
-  
+const disableVariant = function disableVariant(req, res) {
   const { productId, variantId } = req.params;
-  
+  const { reason } = req.body;
+
   controller
-    .getVariantStockHistory(productId, variantId)
-    .then(history => {
-      response.success(req, res, history, 200);
+    .disableVariant(productId, variantId, reason || 'Manual disable')
+    .then(data => {
+      response.success(req, res, data, 200);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      console.error('Error disabling variant:', err);
+      response.error(req, res, err.message || 'Error disabling variant', 500, err);
     });
+  
+  return undefined;
+};
+
+const enableVariant = function enableVariant(req, res) {
+  const { productId, variantId } = req.params;
+  const { reason } = req.body;
+
+  controller
+    .enableVariant(productId, variantId, reason || 'Manual enable')
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error enabling variant:', err);
+      response.error(req, res, err.message || 'Error enabling variant', 500, err);
+    });
+  
+  return undefined;
 };
 
 router.post('/', passportConfig.isAuth, addProduct);
@@ -217,13 +271,15 @@ router.get('/', passportConfig.isAuth, listProducts);
 router.get('/:productId', passportConfig.isAuth, listProducts);
 router.patch('/:productId', passportConfig.isAuth, updateProduct);
 router.delete('/:productId', passportConfig.isAuth, removeProduct);
-router.put('/:productId/add-pieces', passportConfig.isAuth, addPiecesToProduct);    
-router.get('/:productId/stock-history', passportConfig.isAuth, getStockHistory);  
-router.post('/:productId/variants', passportConfig.isAuth, addVariant);                                  
-router.get('/:productId/variants', passportConfig.isAuth, listVariants);                                   
-router.patch('/:productId/variants/:variantId', passportConfig.isAuth, updateVariant);                     
-router.delete('/:productId/variants/:variantId', passportConfig.isAuth, removeVariant);                   
-router.put('/:productId/variants/:variantId/add-stock', passportConfig.isAuth, addStockToVariant);         
-router.get('/:productId/variants/:variantId/stock-history', passportConfig.isAuth, getVariantStockHistory);
+router.put('/:productId/stock/add', passportConfig.isAuth, addStock);
+router.put('/:productId/stock/reduce', passportConfig.isAuth, reduceStock);
+router.put('/:productId/stock/set', passportConfig.isAuth, setStock);
+router.get('/:productId/stock/history', passportConfig.isAuth, getStockHistory);
+router.get('/:productId/stock', passportConfig.isAuth, getProductStock);
+router.post('/:productId/variants', passportConfig.isAuth, addVariant);
+router.put('/:productId/variants/:variantId/stock/add', passportConfig.isAuth, addVariantStock);
+router.put('/:productId/variants/:variantId/disable', passportConfig.isAuth, disableVariant);
+router.put('/:productId/variants/:variantId/enable', passportConfig.isAuth, enableVariant);
+router.get('/reports/low-stock', passportConfig.isAuth, getLowStockProducts);
 
 module.exports = router;

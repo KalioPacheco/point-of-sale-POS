@@ -2,80 +2,50 @@ const mongoose = require('mongoose');
 
 const { Schema } = mongoose;
 
-
 const variantSchema = new Schema({
   name: {
-    type: String,
-    required: true  
-  },
-  type: {
-    type: String,
-    enum: ['color', 'size', 'model', 'material', 'other'],
-    default: 'other'  
-  },
-  value: {
     type: String,
     required: true 
   },
   sku: {
     type: String,
-    unique: true,
-    sparse: true  
+    sparse: true 
   },
-  price: {
-    type: Number,
-    default: 0  
+ 
+  attributes: {
+    size: String,        
+    color: String,      
+    capacity: String,    
+    material: String,   
+    model: String,       
+    custom: Schema.Types.Mixed 
   },
   stock: {
     type: Number,
-    default: 0  
+    default: 0,
+    min: 0
   },
-  photo: String,  
-  disabled: {
+  
+  price: {
+    type: Number,
+    default: null
+  },
+  
+  active: {
     type: Boolean,
-    default: false  
+    default: true
   },
+  
+  photo: String,
   createdAt: {
     type: Date,
     default: Date.now
   },
-  updatedAt: Date,
-
-  stockHistory: [{    // hstorial de stock específico para cada variante
-    quantity: {
-      type: Number,
-      required: true
-    },
-    type: {
-      type: String,
-      enum: ['entrada', 'salida', 'ajuste'],
-      required: true
-    },
-    reason: {
-      type: String,
-      required: true
-    },
-    addedBy: {
-      type: Schema.ObjectId,
-      ref: 'Users',
-      required: true
-    },
-    addedAt: {
-      type: Date,
-      default: Date.now
-    },
-    previousStock: {
-      type: Number,
-      required: true
-    },
-    newStock: {
-      type: Number,
-      required: true
-    }
-  }]
+  updatedAt: Date
 });
 
-const mySchema = new Schema({
+
+const productSchema = new Schema({
   name: String,
   price: Number,
   folio: {
@@ -93,9 +63,10 @@ const mySchema = new Schema({
   company: {
     type: Schema.ObjectId,
     ref: 'Companies',
+    required: false
   },
   description: String,
-  stock: Number,
+  stock: Number, 
   photo: String,
   disable: {
     type: Boolean,
@@ -120,54 +91,30 @@ const mySchema = new Schema({
       ref: 'Categories',
     },
   ],
-  unit: {
-    type: String,
-    enum: ['pieza', 'mililitro', 'gramo', 'kilo'],
-    required: true,
-    default: 'pieza',
-  },
-  // campos agregados para el hirtorial  
-  stockHistory: [{
-    quantity: {
-      type: Number,
-      required: true
-    },
-    type: {
-      type: String,
-      enum: ['entrada', 'salida', 'ajuste'],
-      required: true
-    },
-    reason: {
-      type: String,
-      required: true
-    },
-    addedBy: {
-      type: Schema.ObjectId,
-      ref: 'Users',
-      required: true
-    },
-    addedAt: {
-      type: Date,
-      default: Date.now
-    },
-    previousStock: {
-      type: Number,
-      required: true
-    },
-    newStock: {
-      type: Number,
-      required: true
-    }
-  }],
   
-  variants: [variantSchema], 
- 
+  
   hasVariants: {
     type: Boolean,
     default: false 
-  }
- 
+  },
+  variants: [variantSchema] 
 });
 
-const model = mongoose.model('Products', mySchema, 'products');
+
+productSchema.methods.getTotalStock = function() {
+  if (!this.hasVariants) {
+    return this.stock || 0;
+  }
+  
+  const variantStock = this.variants
+    .filter(variant => variant.active)
+    .reduce((total, variant) => total + (variant.stock || 0), 0);
+    
+  return variantStock;
+};
+
+productSchema.methods.hasStock = function() {
+  return this.getTotalStock() > 0;
+};
+const model = mongoose.model('Products', productSchema, 'products');
 module.exports = model;
