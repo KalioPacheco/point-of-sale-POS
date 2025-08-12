@@ -7,13 +7,11 @@ const Helper = require('../../helpers');
 
 const router = express.Router();
 
-
 const handleRequest = (req, res, promise) => {
   promise
     .then(data => response.success(req, res, data, 200))
     .catch(err => response.error(req, res, err.message, 500, err));
 };
-
 
 router.post('/create', passportConfig.isAuth, (req, res) => {
   const cutData = { 
@@ -23,7 +21,6 @@ router.post('/create', passportConfig.isAuth, (req, res) => {
   };
   handleRequest(req, res, controller.createCashRegisterCut(cutData));
 });
-
 
 router.get('/reports/general', passportConfig.isAuth, (req, res) => {
   const filters = { ...req.query, companyId: Helper.getCompanyId(req) };
@@ -53,8 +50,6 @@ router.get('/reports/cashregister/:cashRegister', passportConfig.isAuth, (req, r
     req.params.cashRegister, startDate, endDate, Helper.getCompanyId(req)
   ));
 });
-
-
 router.get('/', passportConfig.isAuth, (req, res) => {
   const filters = { ...req.query, companyId: Helper.getCompanyId(req) };
   handleRequest(req, res, controller.getCashRegisterCuts(filters));
@@ -66,10 +61,6 @@ router.get('/:cutId/pdf', passportConfig.isAuth, (req, res) => {
     .catch(err => response.error(req, res, err.message, 500, err));
 });
 
-router.get('/:cutId/ticket', passportConfig.isAuth, (req, res) => {
-  store.generateCutTicket(req.params.cutId, res)
-    .catch(err => response.error(req, res, err.message, 500, err));
-});
 
 router.get('/:cutId', passportConfig.isAuth, (req, res) => {
   handleRequest(req, res, controller.getCashRegisterCutById(req.params.cutId));

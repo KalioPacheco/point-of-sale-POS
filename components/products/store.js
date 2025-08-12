@@ -77,6 +77,7 @@ async function updateProduct(productId, product) {
       ...minSell,
     };
   }
+
   if (hasVariants !== null) {
     founProduct.hasVariants = hasVariants;
   }
@@ -114,7 +115,6 @@ async function addStock(productId, quantity, reason = 'Manual adjustment') {
 
   const previousStock = product.stock || 0;
   const newStock = previousStock + quantity;
-
   product.stock = newStock;
   product.updated = true;
   product.updatedAt = new Date();
@@ -146,13 +146,14 @@ async function reduceStock(productId, quantity, reason = 'Manual adjustment') {
   }
 
   const previousStock = product.stock || 0;
-  
+
   if (previousStock < quantity) {
     throw new Error(`Insufficient stock. Available: ${previousStock}, Requested: ${quantity}`);
   }
 
   const newStock = previousStock - quantity;
- 
+
+
   product.stock = newStock;
   product.updated = true;
   product.updatedAt = new Date();
@@ -185,6 +186,7 @@ async function setStock(productId, quantity, reason = 'Stock adjustment') {
 
   const previousStock = product.stock || 0;
   const newStock = quantity;
+
 
   product.stock = newStock;
   product.updated = true;
@@ -305,13 +307,14 @@ async function addVariant(productId, variantData) {
     throw new Error('Product not found');
   }
 
+
   const newVariant = {
     name: variantData.name,
     sku: variantData.sku,
     attributes: variantData.attributes || {},
     stock: variantData.stock || 0,
     price: variantData.price || null,
-    active: variantData.active !== false, 
+    active: variantData.active !== false, // Por defecto true
     photo: variantData.photo,
     createdAt: new Date()
   };

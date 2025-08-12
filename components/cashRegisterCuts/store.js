@@ -3,17 +3,20 @@ const Model = require('./model');
 const SalesModel = require('../sales/model');
 const UsersModel = require('../users/model');
 
-
+// CREAR CORTE
 async function createCashRegisterCut(cutData) {
-
+  // Validar admin
   const admin = await UsersModel.findById(cutData.administratorId);
   if (!admin?.privileges?.full) throw new Error('User does not have administrator privileges');
- 
+
+  // Validar cajero
   const cashier = await UsersModel.findById(cutData.cashierId);
   if (!cashier) throw new Error('Cashier not found');
- 
+
+  // Generar número de corte
   const cutNumber = await Model.generateCutNumber(cutData.cashRegister || 'CAJA-1');
 
+  // Buscar ventas del turno
   const sales = await SalesModel.find({
     cashRegister: cutData.cashRegister,
     createdBy: cutData.cashierId,
@@ -21,6 +24,7 @@ async function createCashRegisterCut(cutData) {
     disable: false
   });
 
+  // Calcular resumen
   const salesSummary = {
     totalSales: 0, totalRefunds: 0, netSales: 0,
     cash: { sales: 0, refunds: 0, net: 0 },
@@ -30,6 +34,7 @@ async function createCashRegisterCut(cutData) {
     salesIds: sales.map(s => s._id) // eslint-disable-line no-underscore-dangle
   };
 
+  // Procesar ventas
   sales.forEach(sale => {
     const isRefund = sale.status === 'cancelled' || sale.refund;
     const amount = sale.total || 0;
@@ -43,6 +48,7 @@ async function createCashRegisterCut(cutData) {
     }
   });
 
+  // Calcular netos
   ['cash', 'card', 'mixed'].forEach(method => {
     salesSummary[method].net = salesSummary[method].sales - salesSummary[method].refunds;
     salesSummary.totalSales += salesSummary[method].sales;
@@ -50,6 +56,7 @@ async function createCashRegisterCut(cutData) {
   });
   salesSummary.netSales = salesSummary.totalSales - salesSummary.totalRefunds;
 
+  // Crear corte
   const newCut = new Model({
     cutNumber,
     cashRegister: cutData.cashRegister || 'CAJA-1',
@@ -114,7 +121,6 @@ async function getCashRegisterCutById(cutId) {
   if (!cut) throw new Error('Cut not found');
   return cut;
 }
-
 async function generateCutPDFDirect(cutId, res) {
   const cut = await Model.findById(cutId);
   if (!cut) throw new Error('Cut not found');
@@ -129,6 +135,7 @@ async function generateCutPDFDirect(cutId, res) {
   res.setHeader('Content-Disposition', `inline; filename="corte-${cutId}.pdf"`);
   doc.pipe(res);
 
+  // Contenido del PDF
   doc.fontSize(18).text('CORTE DE CAJA', { align: 'center' });
   doc.fontSize(12).text('Mi Tienda POS', { align: 'center' });
   doc.moveDown(2);
@@ -145,25 +152,25 @@ async function generateCutPDFDirect(cutId, res) {
 
   doc.fontSize(14).text('RESUMEN DE VENTAS:');
   doc.fontSize(12);
-  doc.text(`Efectivo: $${(cut.salesSummary.cash.net || 0).toLocaleString()}`);
-  doc.text(`Tarjeta: $${(cut.salesSummary.card.net || 0).toLocaleString()}`);
-  doc.text(`Total: $${(cut.salesSummary.netSales || 0).toLocaleString()}`);
+  doc.text(`Efectivo: ${(cut.salesSummary.cash.net || 0).toLocaleString()}`);
+  doc.text(`Tarjeta: ${(cut.salesSummary.card.net || 0).toLocaleString()}`);
+  doc.text(`Total: ${(cut.salesSummary.netSales || 0).toLocaleString()}`);
   doc.text(`Ventas: ${cut.salesSummary.salesCount || 0}`);
   doc.moveDown();
 
   doc.fontSize(14).text('CONTROL DE EFECTIVO:');
   doc.fontSize(12);
-  doc.text(`Inicial: $${(cut.cashControl.initialCash || 0).toLocaleString()}`);
-  doc.text(`Esperado: $${(cut.cashControl.expectedCash || 0).toLocaleString()}`);
-  doc.text(`Contado: $${(cut.cashControl.actualCash || 0).toLocaleString()}`);
+  doc.text(`Inicial: ${(cut.cashControl.initialCash || 0).toLocaleString()}`);
+  doc.text(`Esperado: ${(cut.cashControl.expectedCash || 0).toLocaleString()}`);
+  doc.text(`Contado: ${(cut.cashControl.actualCash || 0).toLocaleString()}`);
   
   const diff = cut.cashControl.difference || 0;
   if (diff > 0) {
-    doc.text(`Diferencia: +$${diff.toLocaleString()} (SOBRANTE)`);
+    doc.text(`Diferencia: +${diff.toLocaleString()} (SOBRANTE)`);
   } else if (diff < 0) {
-    doc.text(`Diferencia: -$${Math.abs(diff).toLocaleString()} (FALTANTE)`);
+    doc.text(`Diferencia: -${Math.abs(diff).toLocaleString()} (FALTANTE)`);
   } else {
-    doc.text(`Diferencia: $${diff.toLocaleString()}`);
+    doc.text(`Diferencia: ${diff.toLocaleString()}`);
   }
   doc.moveDown();
 
@@ -177,63 +184,6 @@ async function generateCutPDFDirect(cutId, res) {
   doc.text('  Firma del Cajero            Firma del Admin');
   doc.moveDown();
   doc.fontSize(8).text(`Generado: ${new Date().toLocaleString('es-MX')}`);
-
-  doc.end();
-}
-async function generateCutTicket(cutId, res) {
-  const cut = await Model.findById(cutId);
-  if (!cut) throw new Error('Cut not found');
-
-  const [cashierData, adminData] = await Promise.all([
-    UsersModel.findById(cut.cashier).select('userName name'),
-    UsersModel.findById(cut.administrator).select('userName name')
-  ]);
-
-  const doc = new PDFDocument({ size: [226, 841], margin: 10 });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="ticket-${cutId}.pdf"`);
-  doc.pipe(res);
-
-  doc.fontSize(12).text('CIERRE DE TURNO', { align: 'center' });
-  doc.fontSize(8).text('Mi Tienda POS', { align: 'center' });
-  doc.text('================================', { align: 'center' });
-  doc.moveDown(0.5);
-
-  doc.text(`Turno: ${cut.cutNumber}`);
-  doc.text(`Caja: ${cut.cashRegister}`);
-  doc.text(`Fecha: ${cut.cutDate.toLocaleDateString('es-MX')}`);
-  doc.text(`Cajero: ${cashierData?.name || cashierData?.userName || 'N/A'}`);
-  doc.text(`Supervisor: ${adminData?.name || adminData?.userName || 'N/A'}`);
-  doc.text('================================');
-  doc.moveDown(0.3);
-
-  doc.text('RESUMEN:');
-  doc.text(`Efectivo: $${(cut.salesSummary.cash.net || 0).toLocaleString()}`);
-  doc.text(`Tarjeta:  $${(cut.salesSummary.card.net || 0).toLocaleString()}`);
-  doc.text(`Total:    $${(cut.salesSummary.netSales || 0).toLocaleString()}`);
-  doc.text(`Ventas:   ${cut.salesSummary.salesCount || 0}`);
-  doc.text('================================');
-  doc.moveDown(0.3);
-
-  doc.text('EFECTIVO:');
-  doc.text(`Inicial:  $${(cut.cashControl.initialCash || 0).toLocaleString()}`);
-  doc.text(`Esperado: $${(cut.cashControl.expectedCash || 0).toLocaleString()}`);
-  doc.text(`Contado:  $${(cut.cashControl.actualCash || 0).toLocaleString()}`);
-  doc.text('--------------------------------');
-  
-  const diff = cut.cashControl.difference || 0;
-  if (diff > 0) {
-    doc.text(`SOBRANTE: +$${diff.toLocaleString()}`);
-  } else if (diff < 0) {
-    doc.text(`FALTANTE: -$${Math.abs(diff).toLocaleString()}`);
-  } else {
-    doc.text(`SIN DIFERENCIA: $0`);
-  }
-  
-  doc.text('================================');
-  doc.moveDown(0.5);
-  doc.fontSize(6);
-  doc.text(`Generado: ${new Date().toLocaleString('es-MX')}`, { align: 'center' });
 
   doc.end();
 }
@@ -253,8 +203,7 @@ module.exports = {
   createCashRegisterCut,
   getCashRegisterCuts,
   getCashRegisterCutById,
-  generateCutPDFDirect,
-  generateCutTicket,
+  generateCutPDFDirect, 
   generateCashRegisterReport,
   getDailyCashRegisterReport: (date, companyId) => generateCashRegisterReport({ date, companyId }),
   getUserCashRegisterReport: (userId, startDate, endDate, companyId) => 

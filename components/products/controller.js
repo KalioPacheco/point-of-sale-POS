@@ -32,6 +32,7 @@ function removeProduct(productId) {
   return store.remove(productId);
 }
 
+// ===== FUNCIONES DE GESTIÓN DE STOCK =====
 
 function addStock(productId, quantity, reason) {
   if (!productId || !quantity || quantity <= 0) {
@@ -76,7 +77,9 @@ function getProductStock(productId) {
   
   return store.getProductStock(productId);
 }
-// variantes agregadas 
+
+// ===== NUEVAS FUNCIONES DE GESTIÓN DE VARIANTES =====
+
 function addVariant(productId, variantData) {
   if (!productId) {
     return Promise.reject('productId is required');
@@ -134,12 +137,14 @@ module.exports = {
   listProducts,
   updateProduct,
   removeProduct,
+  // Funciones de stock
   addStock,
   reduceStock,
   setStock,
   getStockHistory,
   getLowStockProducts,
   getProductStock,
+  // NUEVAS FUNCIONES DE VARIANTES
   addVariant,
   addVariantStock,
   disableVariant,

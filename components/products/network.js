@@ -47,6 +47,7 @@ const updateProduct = function updateProduct(req, res) {
   const { productId } = req.params;
   const companyId = Helper.getCompanyId(req);
   
+  // Solo agregar company si es un ObjectId válido
   if (companyId !== 'default-company-id' && mongoose.Types.ObjectId.isValid(companyId)) {
     product.company = companyId;
   }
@@ -76,7 +77,6 @@ const removeProduct = function removeProduct(req, res) {
   
   return undefined;
 };
-
 
 const addStock = function addStock(req, res) {
   const { productId } = req.params;
@@ -189,6 +189,7 @@ const getProductStock = function getProductStock(req, res) {
   
   return undefined;
 };
+
 
 const addVariant = function addVariant(req, res) {
   const { productId } = req.params;
