@@ -3,16 +3,12 @@ const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const { validateBrand } = require('../../middleware/validation');
+
 
 const router = express.Router();
 
-// middleware that is specific to this router
-// router.use((req, res, next) => {
-//   console.log('Time: ', Date.now());
-//   next();
-// });
-
-const addBrand = function (req, res) {
+const addBrand = function addBrand(req, res) {
   const brand = req.body;
   const companyId = Helper.getCompanyId(req);
   brand.companyId = companyId;
@@ -26,7 +22,7 @@ const addBrand = function (req, res) {
     });
 };
 
-const lisBrands = function (req, res) {
+const lisBrands = function lisBrands(req, res) {
   const { brandId } = req.params;
   const companyId = Helper.getCompanyId(req);
   controller
@@ -39,7 +35,7 @@ const lisBrands = function (req, res) {
     });
 };
 
-const updateBrand = function (req, res) {
+const updateBrand = function updateBrand(req, res) {
   const { brandId } = req.params;
   const brand = req.body;
   const companyId = Helper.getCompanyId(req);
@@ -54,7 +50,7 @@ const updateBrand = function (req, res) {
     });
 };
 
-const removeBrand = function (req, res) {
+const removeBrand = function removeBrand(req, res) {
   const { brandId } = req.params;
   controller
     .removeBrand(brandId)
@@ -66,10 +62,11 @@ const removeBrand = function (req, res) {
     });
 };
 
+
 router.get('/', passportConfig.isAuth, lisBrands);
 router.get('/:brandId', passportConfig.isAuth, lisBrands);
-router.post('/', passportConfig.isAuth, addBrand);
-router.patch('/:brandId', passportConfig.isAuth, updateBrand);
+router.post('/', passportConfig.isAuth, validateBrand, addBrand);
+router.patch('/:brandId', passportConfig.isAuth, validateBrand, updateBrand);
 router.delete('/:brandId', passportConfig.isAuth, removeBrand);
 
 module.exports = router;

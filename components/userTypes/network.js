@@ -3,6 +3,7 @@ const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const { validateUserType } = require('../../middleware/validation');
 
 const router = express.Router();
 
@@ -62,8 +63,8 @@ const removeType = function (req, res) {
 
 router.get('/', passportConfig.isAuth, listTypes);
 router.get('/:typeId', passportConfig.isAuth, listTypes);
-router.post('/', passportConfig.isAuth, addType);
-router.patch('/:typeId', passportConfig.isAuth, updateType);
+router.post('/', passportConfig.isAuth, validateUserType, addType);           
+router.patch('/:typeId', passportConfig.isAuth, validateUserType, updateType);
 router.delete('/:typeId', passportConfig.isAuth, removeType);
 
 module.exports = router;

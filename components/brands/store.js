@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Model = require('./model');
 
 function addBrand(brand) {
@@ -5,30 +6,27 @@ function addBrand(brand) {
   return newBrand.save();
 }
 
-function listBrands(brandId, companyId) {
-  return new Promise((resolve, reject) => {
-    let filter = {};
-    if (brandId) {
-      filter = {
-        _id: brandId,
-      };
+async function listBrands(brandId, companyId) {
+  const filter = {};
+  
+  if (brandId) {
+    filter.id = brandId;
+  }
+
+  if (companyId && companyId !== 'default-company-id') {
+    if (mongoose.Types.ObjectId.isValid(companyId)) {
+      filter.company = companyId;
     }
+  }
 
-    filter.company = companyId;
-    filter.disable = false;
+  filter.disable = false;
 
-    Model.find(filter)
-      .populate('createdBy')
-      .populate('company')
-      .exec((err, populated) => {
-        if (err) {
-          reject(err);
-          return false;
-        }
-        resolve(populated);
-        return true;
-      });
-  });
+  const brands = await Model.find(filter)
+    .populate('createdBy')
+    .populate('company')
+    .exec();
+    
+  return brands;
 }
 
 async function updateBrand(brandId, data) {
@@ -36,13 +34,17 @@ async function updateBrand(brandId, data) {
     _id: brandId,
   });
 
+  if (!foundBrand) {
+    throw new Error('Brand not found');
+  }
+
   const { name = '', photo = '' } = data;
 
   if (name) {
     foundBrand.name = name;
   }
   if (photo) {
-    foundBrand.photo = name;
+    foundBrand.photo = photo; 
   }
 
   foundBrand.updated = true;
@@ -55,6 +57,10 @@ async function removeBrand(brandId) {
   const foundBrand = await Model.findOne({
     _id: brandId,
   });
+
+  if (!foundBrand) {
+    throw new Error('Brand not found');
+  }
 
   foundBrand.disable = true;
 

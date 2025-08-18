@@ -1,4 +1,4 @@
-/* eslint-disable no-undef */
+/* eslint-disable import/no-unresolved */
 /* eslint-disable consistent-return */
 const express = require('express');
 const controller = require('./controller');
@@ -7,8 +7,7 @@ const { validateCoupon } = require('../../middleware/validation');
 
 const router = express.Router();
 
-
-router.post('/', validateCoupon, async (req, res) => {
+router.post('/', validateCoupon, async (req, res) => { 
   try {
     const couponData = {
       ...req.body,
@@ -43,6 +42,7 @@ router.get('/', async (req, res) => {
       limit: limit ? parseInt(limit, 10) : undefined
     };
 
+
     Object.keys(filters).forEach(key => 
       filters[key] === undefined && delete filters[key]
     );
@@ -53,6 +53,7 @@ router.get('/', async (req, res) => {
     response.error(req, res, error.message, 500);
   }
 });
+
 
 router.get('/:id', async (req, res) => {
   try {
@@ -70,8 +71,7 @@ router.get('/:id', async (req, res) => {
 });
 
 
-router.put('/:id', validateCoupon, async (req, res) => {
-
+router.put('/:id', validateCoupon, async (req, res) => { 
   try {
     const { id } = req.params;
     const updatedCoupon = await controller.updateCoupon(id, req.body);
@@ -90,6 +90,7 @@ router.delete('/:id', async (req, res) => {
     response.error(req, res, error.message, 400);
   }
 });
+
 
 router.post('/validate', async (req, res) => {
   try {
@@ -153,6 +154,7 @@ router.post('/apply', async (req, res) => {
   }
 });
 
+
 router.get('/active/list', async (req, res) => {
   try {
     const { company } = req.query;
@@ -184,6 +186,7 @@ router.get('/cashier/list', async (req, res) => {
     response.error(req, res, error.message, 500);
   }
 });
+
 
 router.get('/search/:term', async (req, res) => {
   try {
@@ -217,6 +220,7 @@ router.post('/generate-code', async (req, res) => {
   }
 });
 
+
 router.get('/check-code/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -248,6 +252,7 @@ router.get('/stats/:id', async (req, res) => {
   }
 });
 
+
 router.get('/report/:companyId', async (req, res) => {
   try {
     const { companyId } = req.params;
@@ -276,6 +281,7 @@ router.get('/customer/history', async (req, res) => {
   }
 });
 
+
 router.post('/maintenance/expire', async (req, res) => {
   try {
     const result = await controller.expireCoupons();
@@ -284,6 +290,7 @@ router.post('/maintenance/expire', async (req, res) => {
     response.error(req, res, error.message, 500);
   }
 });
+
 
 router.post('/calculate-sale', async (req, res) => {
   try {
@@ -315,7 +322,6 @@ router.post('/calculate-sale', async (req, res) => {
     response.error(req, res, error.message, 500);
   }
 });
-
 
 
 module.exports = router;

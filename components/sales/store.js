@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Model = require('./model');
 
 function addSell(sell) {
@@ -5,63 +6,68 @@ function addSell(sell) {
   return newSales.save();
 }
 
-function listSales(sellId, companyId) {
-  return new Promise((resolve, reject) => {
-    let filter = {};
-    if (sellId) {
-      filter = {
-        _id: sellId,
-      };
+async function listSales(sellId, companyId) {
+  const filter = {};
+  
+  if (sellId) {
+    filter.id = sellId;
+  }
+
+  if (companyId && companyId !== 'default-company-id') {
+    if (mongoose.Types.ObjectId.isValid(companyId)) {
+      filter.company = companyId;
     }
+  }
 
-    filter.company = companyId;
-    filter.disable = false;
+  filter.disable = false;
 
-    Model.find(filter)
-      .populate('products')
-      .populate('createdBy')
-      .populate('company')
-      .exec((err, populated) => {
-        if (err) {
-          reject(err);
-          return false;
-        }
-        resolve(populated);
-        return true;
-      });
-  });
+  const sales = await Model.find(filter)
+    .populate('products')
+    .populate('createdBy')
+    .populate('company')
+    .exec();
+    
+  return sales;
 }
 
 async function updateSell(sellId, sell) {
-  const foundBrand = await Model.findOne({
+  const foundSale = await Model.findOne({
     _id: sellId,
   });
+
+  if (!foundSale) {
+    throw new Error('Sale not found');
+  }
 
   const { refund = false } = sell;
 
   if (refund) {
-    foundBrand.refund = refund;
+    foundSale.refund = refund;
   }
 
-  foundBrand.updated = true;
-  foundBrand.updatedAt = new Date();
+  foundSale.updated = true;
+  foundSale.updatedAt = new Date();
 
-  return foundBrand.save();
+  return foundSale.save();
 }
 
 async function removeSell(sellId) {
-  const foundBrand = await Model.findOne({
+  const foundSale = await Model.findOne({
     _id: sellId,
   });
 
-  foundBrand.disable = true;
+  if (!foundSale) {
+    throw new Error('Sale not found');
+  }
 
-  return foundBrand.save();
+  foundSale.disable = true;
+
+  return foundSale.save();
 }
 
 module.exports = {
   add: addSell,
   list: listSales,
   update: updateSell,
-  remove: removeSell,
+  remove: removeSell
 };
