@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const mySchema = new Schema({
- 
   total: Number,
   change: Number,
   refund: {
@@ -37,8 +36,7 @@ const mySchema = new Schema({
     type: Schema.ObjectId,
     ref: 'Companies',
   },
-  
- 
+
   subtotal: {
     type: Number,
     default: 0 
@@ -46,11 +44,22 @@ const mySchema = new Schema({
   totalTaxes: {
     type: Number,
     default: 0 
-  }
+  },
+  
+
+  couponCode: String,
+  couponDiscount: {
+    type: Number,
+    default: 0
+  },
+  couponId: {
+    type: Schema.ObjectId,
+    ref: 'Coupons'
+  },
+  finalTotal: Number 
 });
 
-
-mySchema.methods.calculateTaxes = function calculateTaxes(productsList) {
+mySchema.methods.calculateTaxes = function calculateTaxes(productsList, couponData = null) {
   let subtotal = 0;
   let taxes = 0;
   
@@ -68,10 +77,22 @@ mySchema.methods.calculateTaxes = function calculateTaxes(productsList) {
   this.totalTaxes = taxes;
   this.total = subtotal + taxes;
   
+
+  if (couponData && couponData.discountAmount) {
+    this.couponCode = couponData.code;
+    this.couponDiscount = couponData.discountAmount;
+    this.couponId = couponData.id;
+    this.finalTotal = this.total - couponData.discountAmount;
+  } else {
+    this.finalTotal = this.total;
+  }
+  
   return {
     subtotal: this.subtotal,
     taxes: this.totalTaxes,
-    total: this.total
+    total: this.total,
+    couponDiscount: this.couponDiscount || 0,
+    finalTotal: this.finalTotal
   };
 };
 

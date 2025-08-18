@@ -1,8 +1,10 @@
 const Model = require('./model');
 
-async function addCoupon(coupon) {
+
+
+async function add(couponData) {
   try {
-    const newCoupon = new Model(coupon);
+    const newCoupon = new Model(couponData);
     const savedCoupon = await newCoupon.save();
     return savedCoupon;
   } catch (error) {
@@ -10,11 +12,10 @@ async function addCoupon(coupon) {
   }
 }
 
-async function getCoupon(id) {
+async function get(id) {
   try {
     const coupon = await Model.findById(id)
-      .populate('applicableProducts', 'name price photo')
-      .populate('applicableCategories', 'name')
+      .populate('applicableProducts', 'name price')
       .populate('company', 'name')
       .populate('createdBy', 'name email');
     
@@ -26,10 +27,10 @@ async function getCoupon(id) {
 
 async function list(couponId, companyId, filters = {}) {
   try {
-    let query = {};
+    const query = {};
 
     if (couponId) {
-      return await getCoupon(couponId);
+      return await get(couponId);
     }
 
     if (companyId) {
@@ -57,27 +58,16 @@ async function list(couponId, companyId, filters = {}) {
       }
     }
 
-    if (filters.startDate || filters.endDate) {
-      query.createdAt = {};
-      if (filters.startDate) {
-        query.createdAt.$gte = new Date(filters.startDate);
-      }
-      if (filters.endDate) {
-        query.createdAt.$lte = new Date(filters.endDate);
-      }
-    }
-
     if (filters.code) {
       query.code = { $regex: filters.code, $options: 'i' };
     }
-  
+
     if (filters.name) {
       query.name = { $regex: filters.name, $options: 'i' };
     }
 
     const coupons = await Model.find(query)
-      .populate('applicableProducts', 'name price photo')
-      .populate('applicableCategories', 'name')
+      .populate('applicableProducts', 'name price')
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 })
       .limit(filters.limit || 100);
@@ -89,20 +79,18 @@ async function list(couponId, companyId, filters = {}) {
   }
 }
 
-async function updateCoupon(id, couponData) {
+async function update(id, couponData) {
   try {
-   
     const existingCoupon = await Model.findById(id);
     
     if (!existingCoupon) {
       throw new Error('Coupon not found');
     }
 
-    if (existingCoupon.currentUsage > 0) {
+    if (existingCoupon.usageHistory.length > 0) {
       const restrictedFields = ['code', 'discountType', 'discountValue', 'applicableProducts'];
       const hasRestrictedChanges = restrictedFields.some(field => 
-        couponData[field] !== undefined && 
-        couponData[field] !== existingCoupon[field]
+        couponData[field] !== undefined
       );
 
       if (hasRestrictedChanges) {
@@ -110,15 +98,14 @@ async function updateCoupon(id, couponData) {
       }
     }
 
-    couponData.updatedAt = new Date();
+    const updatedCouponData = { ...couponData, updatedAt: new Date() };
     
     const updatedCoupon = await Model.findByIdAndUpdate(
       id,
-      couponData,
+      updatedCouponData,
       { new: true, runValidators: true }
     )
-      .populate('applicableProducts', 'name price photo')
-      .populate('applicableCategories', 'name')
+      .populate('applicableProducts', 'name price')
       .populate('createdBy', 'name email');
 
     return updatedCoupon;
@@ -128,21 +115,21 @@ async function updateCoupon(id, couponData) {
   }
 }
 
-async function removeCoupon(id) {
+async function remove(id) {
   try {
     const coupon = await Model.findById(id);
     
     if (!coupon) {
       throw new Error('Coupon not found');
     }
-
-    if (coupon.currentUsage > 0) {
+    if (coupon.usageHistory.length > 0) {
       coupon.disable = true;
       coupon.status = 'inactive';
       coupon.updatedAt = new Date();
       return await coupon.save();
     }
 
+ 
     return await Model.findByIdAndDelete(id);
 
   } catch (error) {
@@ -157,8 +144,7 @@ async function findByCode(code, companyId) {
       company: companyId,
       disable: false
     })
-      .populate('applicableProducts', 'name price photo')
-      .populate('applicableCategories', 'name');
+      .populate('applicableProducts', 'name price');
 
     return coupon;
 
@@ -175,12 +161,7 @@ async function getActiveCoupons(companyId) {
       company: companyId,
       disable: false,
       status: 'active',
-      startDate: { $lte: now },
-      expirationDate: { $gte: now },
-      $or: [
-        { usageLimit: null },
-        { $expr: { $lt: ['$currentUsage', '$usageLimit'] } }
-      ]
+      expirationDate: { $gte: now }
     })
       .select('code name description discountType discountValue minimumPurchase applicationMethods')
       .sort({ name: 1 });
@@ -200,13 +181,8 @@ async function getCouponsForCashier(companyId) {
       company: companyId,
       disable: false,
       status: 'active',
-      startDate: { $lte: now },
       expirationDate: { $gte: now },
-      'applicationMethods.cashierSelection': true,
-      $or: [
-        { usageLimit: null },
-        { $expr: { $lt: ['$currentUsage', '$usageLimit'] } }
-      ]
+      'applicationMethods.cashierSelection': true
     })
       .select('code name description discountType discountValue minimumPurchase')
       .sort({ name: 1 });
@@ -218,51 +194,82 @@ async function getCouponsForCashier(companyId) {
   }
 }
 
-async function getCustomerCoupons(customerId, companyId) {
+async function getCustomerCouponHistory(customerId, companyId) {
   try {
-    const now = new Date();
-    
-    const availableCoupons = await Model.find({
+    const coupons = await Model.find({
       company: companyId,
-      disable: false,
-      status: 'active',
-      startDate: { $lte: now },
-      expirationDate: { $gte: now },
-      $or: [
-        { usageLimit: null },
-        { $expr: { $lt: ['$currentUsage', '$usageLimit'] } }
-      ]
-    });
-    const customerAvailableCoupons = availableCoupons.filter(coupon => {
-      if (!coupon.usagePerCustomer) return true;
-      
-      const customerUsage = coupon.usageHistory.filter(
+      'usageHistory.customerId': customerId
+    })
+      .select('code name discountType discountValue usageHistory')
+      .sort({ 'usageHistory.usedAt': -1 });
+
+    const history = [];
+    coupons.forEach(coupon => {
+      const customerUsages = coupon.usageHistory.filter(
         usage => usage.customerId && usage.customerId.toString() === customerId.toString()
-      ).length;
+      );
       
-      return customerUsage < coupon.usagePerCustomer;
+      customerUsages.forEach(usage => {
+        history.push({
+          couponCode: coupon.code,
+          couponName: coupon.name,
+          discountType: coupon.discountType,
+          discountValue: coupon.discountValue,
+          discountApplied: usage.discountApplied,
+          usedAt: usage.usedAt,
+          saleId: usage.saleId
+        });
+      });
     });
 
-    return customerAvailableCoupons.map(coupon => ({
-      code: coupon.code,
-      name: coupon.name,
-      description: coupon.description,
-      discountType: coupon.discountType,
-      discountValue: coupon.discountValue,
-      minimumPurchase: coupon.minimumPurchase,
-      expirationDate: coupon.expirationDate,
-      remainingUses: coupon.usagePerCustomer ? 
-        coupon.usagePerCustomer - coupon.usageHistory.filter(
-          usage => usage.customerId && usage.customerId.toString() === customerId.toString()
-        ).length : 'Ilimitado'
-    }));
+    return history.sort((a, b) => new Date(b.usedAt) - new Date(a.usedAt));
 
   } catch (error) {
-    throw new Error(`Error getting customer coupons: ${error.message}`);
+    throw new Error(`Error getting customer coupon history: ${error.message}`);
   }
 }
 
-async function getCouponUsageReport(companyId, startDate, endDate) {
+async function getCouponStats(couponId) {
+  try {
+    const coupon = await Model.findById(couponId);
+
+    if (!coupon) {
+      throw new Error('Coupon not found');
+    }
+
+    const totalUsage = coupon.usageHistory.length;
+    const totalDiscount = coupon.usageHistory.reduce(
+      (sum, usage) => sum + usage.discountApplied, 0
+    );
+
+    const uniqueCustomers = new Set(
+      coupon.usageHistory
+        .filter(usage => usage.customerId)
+        .map(usage => usage.customerId.toString())
+    ).size;
+
+    const averageDiscount = totalUsage > 0 ? totalDiscount / totalUsage : 0;
+
+    const lastUsed = coupon.usageHistory.length > 0
+      ? coupon.usageHistory[coupon.usageHistory.length - 1].usedAt
+      : null;
+
+    return {
+      totalUsage,
+      totalDiscount: Math.round(totalDiscount * 100) / 100,
+      averageDiscount: Math.round(averageDiscount * 100) / 100,
+      uniqueCustomers,
+      lastUsed,
+      status: coupon.status,
+      isExpired: new Date() > coupon.expirationDate
+    };
+
+  } catch (error) {
+    throw new Error(`Error getting coupon stats: ${error.message}`);
+  }
+}
+
+async function getCouponsReport(companyId, startDate, endDate) {
   try {
     const matchStage = {
       company: companyId,
@@ -270,76 +277,54 @@ async function getCouponUsageReport(companyId, startDate, endDate) {
     };
 
     if (startDate || endDate) {
-      matchStage['usageHistory.usedAt'] = {};
-      if (startDate) matchStage['usageHistory.usedAt'].$gte = new Date(startDate);
-      if (endDate) matchStage['usageHistory.usedAt'].$lte = new Date(endDate);
+      matchStage.createdAt = {};
+      if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+      if (endDate) matchStage.createdAt.$lte = new Date(endDate);
     }
 
     const report = await Model.aggregate([
       { $match: matchStage },
-      { $unwind: '$usageHistory' },
-      {
-        $match: startDate || endDate ? {
-          'usageHistory.usedAt': {
-            ...(startDate && { $gte: new Date(startDate) }),
-            ...(endDate && { $lte: new Date(endDate) })
-          }
-        } : {}
-      },
       {
         $group: {
-          _id: '$_id',
-          code: { $first: '$code' },
-          name: { $first: '$name' },
-          discountType: { $first: '$discountType' },
-          discountValue: { $first: '$discountValue' },
-          totalUsage: { $sum: 1 },
-          totalDiscount: { $sum: '$usageHistory.discountApplied' },
-          averageDiscount: { $avg: '$usageHistory.discountApplied' },
-          lastUsed: { $max: '$usageHistory.usedAt' }
+          _id: null,
+          totalCoupons: { $sum: 1 },
+          activeCoupons: {
+            $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] }
+          },
+          expiredCoupons: {
+            $sum: { $cond: [{ $eq: ['$status', 'expired'] }, 1, 0] }
+          },
+          totalUsage: { $sum: { $size: '$usageHistory' } },
+          totalDiscountGiven: {
+            $sum: {
+              $reduce: {
+                input: '$usageHistory',
+                initialValue: 0,
+                in: { $add: ['$$value', '$$this.discountApplied'] }
+              }
+            }
+          }
         }
-      },
-      { $sort: { totalUsage: -1 } }
+      }
     ]);
 
-    return report;
+    return report[0] || {
+      totalCoupons: 0,
+      activeCoupons: 0,
+      expiredCoupons: 0,
+      totalUsage: 0,
+      totalDiscountGiven: 0
+    };
 
   } catch (error) {
-    throw new Error(`Error generating coupon usage report: ${error.message}`);
-  }
-}
-
-async function getTopCoupons(companyId, limit = 10) {
-  try {
-    const topCoupons = await Model.find({
-      company: companyId,
-      disable: false,
-      currentUsage: { $gt: 0 }
-    })
-      .sort({ currentUsage: -1 })
-      .limit(limit)
-      .select('code name currentUsage usageHistory discountType discountValue');
-
-    return topCoupons.map(coupon => ({
-      code: coupon.code,
-      name: coupon.name,
-      totalUsage: coupon.currentUsage,
-      totalDiscount: coupon.usageHistory.reduce(
-        (sum, usage) => sum + usage.discountApplied, 0
-      ),
-      discountType: coupon.discountType,
-      discountValue: coupon.discountValue
-    }));
-
-  } catch (error) {
-    throw new Error(`Error getting top coupons: ${error.message}`);
+    throw new Error(`Error generating coupons report: ${error.message}`);
   }
 }
 
 async function expireOldCoupons() {
   try {
     const now = new Date();
-    
+
     const result = await Model.updateMany(
       {
         status: 'active',
@@ -351,33 +336,12 @@ async function expireOldCoupons() {
       }
     );
 
-    return result;
+    return {
+      expired: result.modifiedCount
+    };
 
   } catch (error) {
-    throw new Error(`Error expiring old coupons: ${error.message}`);
-  }
-}
-
-async function cleanupOldUsage(daysToKeep = 365) {
-  try {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-    const result = await Model.updateMany(
-      {},
-      {
-        $pull: {
-          usageHistory: {
-            usedAt: { $lt: cutoffDate }
-          }
-        }
-      }
-    );
-
-    return result;
-
-  } catch (error) {
-    throw new Error(`Error cleaning up old usage: ${error.message}`);
+    throw new Error(`Error expiring coupons: ${error.message}`);
   }
 }
 
@@ -390,7 +354,7 @@ async function checkCodeUniqueness(code, companyId, excludeId = null) {
     };
 
     if (excludeId) {
-      query._id = { $ne: excludeId };
+      query.id = { $ne: excludeId };
     }
 
     const existingCoupon = await Model.findOne(query);
@@ -401,63 +365,18 @@ async function checkCodeUniqueness(code, companyId, excludeId = null) {
   }
 }
 
-async function bulkUpdateStatus(couponIds, newStatus) {
-  try {
-    const result = await Model.updateMany(
-      { _id: { $in: couponIds } },
-      { 
-        status: newStatus,
-        updatedAt: new Date()
-      }
-    );
-
-    return result;
-
-  } catch (error) {
-    throw new Error(`Error bulk updating status: ${error.message}`);
-  }
-}
-
-async function bulkDelete(couponIds) {
-  try {
-  
-    const usedCoupons = await Model.find({
-      _id: { $in: couponIds },
-      currentUsage: { $gt: 0 }
-    }).select('code');
-
-    if (usedCoupons.length > 0) {
-      const codes = usedCoupons.map(c => c.code).join(', ');
-      throw new Error(`No se pueden eliminar cupones que ya han sido usados: ${codes}`);
-    }
-
-    const result = await Model.deleteMany({
-      _id: { $in: couponIds },
-      currentUsage: 0
-    });
-
-    return result;
-
-  } catch (error) {
-    throw new Error(`Error bulk deleting coupons: ${error.message}`);
-  }
-}
-
 module.exports = {
-  add: addCoupon,
-  get: getCoupon,
+  add,
+  get,
   list,
-  update: updateCoupon,
-  remove: removeCoupon,
+  update,
+  remove,
   findByCode,
   getActiveCoupons,
   getCouponsForCashier,
-  getCustomerCoupons,
-  getCouponUsageReport,
-  getTopCoupons,
+  getCustomerCouponHistory,
+  getCouponStats,
+  getCouponsReport,
   expireOldCoupons,
-  cleanupOldUsage,
-  checkCodeUniqueness,
-  bulkUpdateStatus,
-  bulkDelete
+  checkCodeUniqueness
 };

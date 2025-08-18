@@ -1,11 +1,13 @@
+/* eslint-disable import/no-unresolved */
+/* eslint-disable consistent-return */
 const express = require('express');
 const controller = require('./controller');
-const response = require('../../network/response');
+const response = require('../../network');
+const { validateCoupon } = require('../../middleware/validation');
 
 const router = express.Router();
 
-// Crear cupón
-router.post('/', async (req, res) => {
+router.post('/', validateCoupon, async (req, res) => { 
   try {
     const couponData = {
       ...req.body,
@@ -14,132 +16,145 @@ router.post('/', async (req, res) => {
     };
 
     const coupon = await controller.addCoupon(couponData);
-    response.success(req, res, coupon, 201);
+    return response.success(req, res, coupon, 201);
   } catch (error) {
     response.error(req, res, error.message, 400);
   }
 });
 
-// Listar cupones
+
 router.get('/', async (req, res) => {
   try {
-    const { company } = req.query;
+    const { company, status, discountType, active, expired, code, name, limit } = req.query;
     const companyId = company || req.user?.company;
     
     if (!companyId) {
       return response.error(req, res, 'Company ID is required', 400);
     }
 
-    const coupons = await controller.listCoupons(null, companyId);
-    response.success(req, res, coupons, 200);
+    const filters = {
+      status,
+      discountType,
+      active: active !== undefined ? active === 'true' : undefined,
+      expired: expired !== undefined ? expired === 'true' : undefined,
+      code,
+      name,
+      limit: limit ? parseInt(limit, 10) : undefined
+    };
+
+
+    Object.keys(filters).forEach(key => 
+      filters[key] === undefined && delete filters[key]
+    );
+
+    const coupons = await controller.listCoupons(null, companyId, filters);
+    return response.success(req, res, coupons, 200);
   } catch (error) {
     response.error(req, res, error.message, 500);
   }
 });
 
-// Obtener cupón específico
+
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const coupon = await controller.listCoupons(id);
-    response.success(req, res, coupon, 200);
+    
+    if (!coupon) {
+      return response.error(req, res, 'Coupon not found', 404);
+    }
+    
+    return response.success(req, res, coupon, 200);
   } catch (error) {
     response.error(req, res, error.message, 404);
   }
 });
 
-// Actualizar cupón
-router.put('/:id', async (req, res) => {
+
+router.put('/:id', validateCoupon, async (req, res) => { 
   try {
     const { id } = req.params;
     const updatedCoupon = await controller.updateCoupon(id, req.body);
-    response.success(req, res, updatedCoupon, 200);
+    return response.success(req, res, updatedCoupon, 200);
   } catch (error) {
     response.error(req, res, error.message, 400);
   }
 });
 
-// Eliminar cupón 
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await controller.removeCoupon(id);
-    response.success(req, res, result, 200);
+    return response.success(req, res, result, 200);
   } catch (error) {
     response.error(req, res, error.message, 400);
   }
 });
 
-// Validar cupón por código
+
 router.post('/validate', async (req, res) => {
   try {
     const { 
       code, 
       company, 
-      customer = {}, 
-      cartSubtotal = 0, 
-      cartProducts = [] 
+      saleData,
+      customerId
     } = req.body;
 
     const companyId = company || req.user?.company;
     
-    if (!code || !companyId) {
-      return response.error(req, res, 'Código de cupón y empresa son requeridos', 400);
+    if (!code || !companyId || !saleData) {
+      return response.error(req, res, 'Código de cupón, empresa y datos de venta son requeridos', 400);
     }
 
     const validation = await controller.validateCoupon(
       code, 
       companyId, 
-      customer, 
-      cartSubtotal, 
-      cartProducts
+      saleData,
+      customerId
     );
 
     if (validation.valid) {
-      response.success(req, res, validation, 200);
-    } else {
-      response.error(req, res, validation.error, 400);
+      return response.success(req, res, validation, 200);
     }
+    return response.error(req, res, validation.error, 400);
   } catch (error) {
     response.error(req, res, error.message, 500);
   }
 });
 
-// Aplicar cupón a una venta
 router.post('/apply', async (req, res) => {
   try {
     const {
-      saleId,
-      couponCode,
-      customer = {},
-      cartData
+      code,
+      company,
+      saleData,
+      customerId
     } = req.body;
 
-    const cashierId = req.user?.id;
+    const companyId = company || req.user?.company;
 
-    if (!saleId || !couponCode || !cartData) {
+    if (!code || !companyId || !saleData) {
       return response.error(req, res, 'Datos incompletos para aplicar cupón', 400);
     }
 
-    const result = await controller.applyCouponToSale(
-      saleId,
-      couponCode,
-      customer,
-      cashierId,
-      cartData
+    const result = await controller.applyCoupon(
+      code,
+      companyId,
+      saleData,
+      customerId
     );
 
     if (result.success) {
-      response.success(req, res, result, 200);
-    } else {
-      response.error(req, res, result.error, 400);
+      return response.success(req, res, result, 200);
     }
+    return response.error(req, res, result.error, 400);
   } catch (error) {
     response.error(req, res, error.message, 500);
   }
 });
 
-// Obtener cupones activos
+
 router.get('/active/list', async (req, res) => {
   try {
     const { company } = req.query;
@@ -150,57 +165,14 @@ router.get('/active/list', async (req, res) => {
     }
 
     const activeCoupons = await controller.getActiveCoupons(companyId);
-    response.success(req, res, activeCoupons, 200);
+    return response.success(req, res, activeCoupons, 200);
   } catch (error) {
     response.error(req, res, error.message, 500);
   }
 });
 
-// Generar código de cupón automático
-router.post('/generate-code', async (req, res) => {
+router.get('/cashier/list', async (req, res) => {
   try {
-    const { prefix, length } = req.body;
-    const code = await controller.generateCouponCode(prefix, length);
-    response.success(req, res, { code }, 200);
-  } catch (error) {
-    response.error(req, res, error.message, 500);
-  }
-});
-
-// Obtener estadísticas de cupones
-router.get('/statistics/:companyId', async (req, res) => {
-  try {
-    const { companyId } = req.params;
-    const { dateFrom, dateTo } = req.query;
-
-    const stats = await controller.getCouponStatistics(companyId, dateFrom, dateTo);
-    response.success(req, res, stats, 200);
-  } catch (error) {
-    response.error(req, res, error.message, 500);
-  }
-});
-
-// Desactivar cupones expirados
-router.post('/maintenance/deactivate-expired', async (req, res) => {
-  try {
-    const { company } = req.body;
-    const companyId = company || req.user?.company;
-    
-    if (!companyId) {
-      return response.error(req, res, 'Company ID is required', 400);
-    }
-
-    const result = await controller.deactivateExpiredCoupons(companyId);
-    response.success(req, res, result, 200);
-  } catch (error) {
-    response.error(req, res, error.message, 500);
-  }
-});
-
-// Búsqueda de cupones por código (para autocompletado)
-router.get('/search/:code', async (req, res) => {
-  try {
-    const { code } = req.params;
     const { company } = req.query;
     const companyId = company || req.user?.company;
     
@@ -208,33 +180,47 @@ router.get('/search/:code', async (req, res) => {
       return response.error(req, res, 'Company ID is required', 400);
     }
 
-    if (code.length < 3) {
-      return response.success(req, res, [], 200);
-    }
-
-    const coupons = await controller.listCoupons(null, companyId);
-    const filtered = coupons.filter(coupon => 
-      coupon.code.toLowerCase().includes(code.toLowerCase()) ||
-      coupon.name.toLowerCase().includes(code.toLowerCase())
-    ).slice(0, 10);
-
-    const suggestions = filtered.map(coupon => ({
-      id: coupon._id,
-      code: coupon.code,
-      name: coupon.name,
-      discountType: coupon.discountType,
-      discountValue: coupon.discountValue,
-      validUntil: coupon.validUntil,
-      active: coupon.active
-    }));
-
-    response.success(req, res, suggestions, 200);
+    const cashierCoupons = await controller.getCouponsForCashier(companyId);
+    return response.success(req, res, cashierCoupons, 200);
   } catch (error) {
     response.error(req, res, error.message, 500);
   }
 });
 
-// Verificar disponibilidad de código
+
+router.get('/search/:term', async (req, res) => {
+  try {
+    const { term } = req.params;
+    const { company } = req.query;
+    const companyId = company || req.user?.company;
+    
+    if (!companyId) {
+      return response.error(req, res, 'Company ID is required', 400);
+    }
+
+    if (term.length < 3) {
+      return response.success(req, res, [], 200);
+    }
+
+    const coupons = await controller.searchCoupons(companyId, term);
+    return response.success(req, res, coupons, 200);
+  } catch (error) {
+    response.error(req, res, error.message, 500);
+  }
+});
+
+
+router.post('/generate-code', async (req, res) => {
+  try {
+    const { prefix } = req.body;
+    const code = controller.generateCouponCode(prefix);
+    return response.success(req, res, { code }, 200);
+  } catch (error) {
+    response.error(req, res, error.message, 500);
+  }
+});
+
+
 router.get('/check-code/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -245,50 +231,35 @@ router.get('/check-code/:code', async (req, res) => {
       return response.error(req, res, 'Company ID is required', 400);
     }
 
-    const store = require('./store');
-    const existingCoupon = await store.findByCode(code, companyId);
+    const available = await controller.checkCouponCode(code, companyId);
     
-    response.success(req, res, {
-      available: !existingCoupon,
-      exists: !!existingCoupon
+    return response.success(req, res, {
+      available,
+      exists: !available
     }, 200);
   } catch (error) {
     response.error(req, res, error.message, 500);
   }
 });
 
-// Obtener cupones aplicables a un carrito específico
-router.post('/applicable', async (req, res) => {
+router.get('/stats/:id', async (req, res) => {
   try {
-    const { products, subtotal, customer, company } = req.body;
-    const companyId = company || req.user?.company;
-    
-    if (!companyId) {
-      return response.error(req, res, 'Company ID is required', 400);
-    }
+    const { id } = req.params;
+    const stats = await controller.getCouponStats(id);
+    return response.success(req, res, stats, 200);
+  } catch (error) {
+    response.error(req, res, error.message, 500);
+  }
+});
 
-    const activeCoupons = await controller.getActiveCoupons(companyId);
-    
-    const applicableCoupons = [];
-    
-    for (const coupon of activeCoupons) {
-      const validation = await controller.validateCoupon(
-        coupon.code,
-        companyId,
-        customer || {},
-        subtotal || 0,
-        products || []
-      );
-      
-      if (validation.valid) {
-        applicableCoupons.push({
-          ...coupon,
-          potentialDiscount: validation.discount
-        });
-      }
-    }
 
-    response.success(req, res, applicableCoupons, 200);
+router.get('/report/:companyId', async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    const report = await controller.getCouponsReport(companyId, startDate, endDate);
+    return response.success(req, res, report, 200);
   } catch (error) {
     response.error(req, res, error.message, 500);
   }
@@ -296,21 +267,61 @@ router.post('/applicable', async (req, res) => {
 
 router.get('/customer/history', async (req, res) => {
   try {
-    const { customerId, phone, email, company } = req.query;
+    const { customerId, company } = req.query;
     const companyId = company || req.user?.company;
     
-    if (!companyId) {
-      return response.error(req, res, 'Company ID is required', 400);
+    if (!customerId || !companyId) {
+      return response.error(req, res, 'Customer ID and Company ID are required', 400);
     }
 
-    const customerInfo = { id: customerId, phone, email };
-    const store = require('./store');
-    const history = await store.getCouponUsageByCustomer(customerInfo, companyId);
-    
-    response.success(req, res, history, 200);
+    const history = await controller.getCustomerCouponHistory(customerId, companyId);
+    return response.success(req, res, history, 200);
   } catch (error) {
     response.error(req, res, error.message, 500);
   }
 });
+
+
+router.post('/maintenance/expire', async (req, res) => {
+  try {
+    const result = await controller.expireCoupons();
+    return response.success(req, res, result, 200);
+  } catch (error) {
+    response.error(req, res, error.message, 500);
+  }
+});
+
+
+router.post('/calculate-sale', async (req, res) => {
+  try {
+    const {
+      saleData,
+      couponCode,
+      company,
+      customerId
+    } = req.body;
+
+    const companyId = company || req.user?.company;
+
+    if (!saleData || !companyId) {
+      return response.error(req, res, 'Sale data and company are required', 400);
+    }
+
+    const result = await controller.calculateSaleWithCoupon(
+      saleData,
+      couponCode,
+      companyId,
+      customerId
+    );
+
+    if (result.success) {
+      return response.success(req, res, result, 200);
+    }
+    return response.error(req, res, result.error, 400);
+  } catch (error) {
+    response.error(req, res, error.message, 500);
+  }
+});
+
 
 module.exports = router;

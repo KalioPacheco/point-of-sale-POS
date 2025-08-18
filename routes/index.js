@@ -7,12 +7,13 @@ const sales = require('../components/sales/network');
 const categories = require('../components/categories/network');
 const customer = require('../components/customer/network');
 const cashRegisterCuts = require('../components/cashRegisterCuts/network');
-const cashMovements = require('../components/cashMovements/network'); 
+const cashMovements = require('../components/cashMovements/network');
 const tickets = require('../components/ticket/network');
-const printers = require('../components/printer/network');
 const taxes = require('../components/taxes/network');
+const coupons = require('../components/coupons/network');
 
 const routes = function routes(server) {
+
   server.use('/brands', brand);
   server.use('/products', products);
   server.use('/users', users);
@@ -24,8 +25,16 @@ const routes = function routes(server) {
   server.use('/cashregistercuts', cashRegisterCuts);
   server.use('/cash-movements', cashMovements);
   server.use('/tickets', tickets);
-  server.use('/printers', printers);
   server.use('/taxes', taxes);
+  server.use('/coupons', coupons);
+
+  server.use((err, req, res, _next) => {
+    console.error('Error:', err);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      message: err.message 
+    });
+  });
 };
 
 module.exports = routes;

@@ -3,6 +3,7 @@ const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const { validateCategory } = require('../../middleware/validation'); 
 
 const router = express.Router();
 
@@ -62,8 +63,9 @@ const removeCategory = function (req, res) {
 
 router.get('/', passportConfig.isAuth, listCategories);
 router.get('/:categoryId', passportConfig.isAuth, listCategories);
-router.post('/', passportConfig.isAuth, addCategory);
-router.patch('/:categoryId', passportConfig.isAuth, updateCategory);
+router.post('/', passportConfig.isAuth, validateCategory, addCategory);          
+router.patch('/:categoryId', passportConfig.isAuth, validateCategory, updateCategory);
 router.delete('/:categoryId', passportConfig.isAuth, removeCategory);
+
 
 module.exports = router;

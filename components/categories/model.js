@@ -4,7 +4,8 @@ const { Schema } = mongoose;
 
 const mySchema = new Schema(
   {
-    name: Number,
+    name: String, 
+    description: String, 
     createdAt: {
       type: Date,
       default: Date.now,

@@ -1,6 +1,5 @@
 const store = require('./store');
 
-// Validaciones
 const validateMovementData = (movementData) => {
   if (!movementData.type) throw new Error('Movement type required');
   if (!movementData.amount) throw new Error('Amount required');

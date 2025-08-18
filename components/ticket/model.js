@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const ticketSchema = new Schema({
- 
   ticketNumber: { type: String, unique: true, required: true },
   ticketType: { 
     type: String, 
@@ -21,7 +20,6 @@ const ticketSchema = new Schema({
     taxId: String,
     email: String
   },
-  
   
   transactionInfo: {
     date: { type: Date, default: Date.now },
@@ -59,12 +57,26 @@ const ticketSchema = new Schema({
     }
   }],
   
-  
   totals: {
     subtotal: { type: Number, default: 0 }, 
     totalTaxes: { type: Number, default: 0 }, 
     discounts: { type: Number, default: 0 },
+    couponDiscount: { type: Number, default: 0 },
+    couponCode: String,
+    couponName: String,
+    
     total: { type: Number, required: true } 
+  },
+  
+  
+  appliedCoupon: {
+    couponId: { type: Schema.ObjectId, ref: 'Coupons' },
+    code: String,
+    name: String,
+    description: String,
+    discountType: { type: String, enum: ['percentage', 'fixed_amount'] },
+    discountValue: Number,
+    discountAmount: Number
   },
   
   taxBreakdown: [{
@@ -73,7 +85,6 @@ const ticketSchema = new Schema({
     type: String,
     totalAmount: Number
   }],
-  
   
   payment: {
     method: { 
@@ -93,7 +104,6 @@ const ticketSchema = new Schema({
     }
   },
   
-  
   printInfo: {
     printed: { type: Boolean, default: false },
     printedAt: Date,
@@ -107,7 +117,8 @@ const ticketSchema = new Schema({
     language: { type: String, default: 'es' },
     showLogo: { type: Boolean, default: false },
     showFooter: { type: Boolean, default: true },
-    showTaxBreakdown: { type: Boolean, default: true } // 🆕 Mostrar desglose de impuestos
+    showTaxBreakdown: { type: Boolean, default: true },
+    showCouponDetails: { type: Boolean, default: true } 
   },
   
   notes: String,
@@ -121,6 +132,7 @@ const ticketSchema = new Schema({
   disable: { type: Boolean, default: false }
   
 }, { timestamps: true });
+
 
 ticketSchema.statics.generateTicketNumber = async function generateTicketNumber(ticketType, cashRegister) {
   const today = new Date();
@@ -142,27 +154,71 @@ ticketSchema.statics.generateTicketNumber = async function generateTicketNumber(
   return `${prefix}-${sequence.toString().padStart(4, '0')}`;
 };
 
+
 ticketSchema.methods.calculateTotals = function calculateTotals() {
   if (this.items && this.items.length > 0) {
-    
+   
     this.totals.subtotal = this.items.reduce((sum, item) => 
       sum + (item.subtotal || (item.unitPrice * item.quantity)), 0
     );
     
+ 
     this.totals.totalTaxes = this.items.reduce((sum, item) => 
       sum + (item.totalTaxes || 0), 0
     );
     
-    this.totals.total = this.totals.subtotal + this.totals.totalTaxes - (this.totals.discounts || 0);
+    
+    const totalBeforeDiscounts = this.totals.subtotal + this.totals.totalTaxes;
+    const totalDiscounts = (this.totals.discounts || 0) + (this.totals.couponDiscount || 0);
+    
+
+    this.totals.total = totalBeforeDiscounts - totalDiscounts;
     
     this.generateTaxBreakdown();
-    
+
     if (this.payment.method === 'efectivo' && this.payment.details?.cashReceived) {
       this.payment.details.change = Math.max(0, this.payment.details.cashReceived - this.totals.total);
     }
   }
   
   return this.totals.total;
+};
+
+ticketSchema.methods.applyCoupon = function applyCoupon(couponData) {
+  if (couponData && couponData.coupon && couponData.discount) {
+    this.appliedCoupon = {
+      couponId: couponData.coupon.id,
+      code: couponData.coupon.code,
+      name: couponData.coupon.name,
+      description: couponData.coupon.description,
+      discountType: couponData.coupon.discountType,
+      discountValue: couponData.coupon.discountValue,
+      discountAmount: couponData.discount.discountAmount
+    };
+    
+    this.totals.couponDiscount = couponData.discount.discountAmount;
+    this.totals.couponCode = couponData.coupon.code;
+    this.totals.couponName = couponData.coupon.name;
+    
+    this.calculateTotals();
+  }
+};
+
+ticketSchema.methods.getCouponReceiptSection = function getCouponReceiptSection() {
+  if (!this.appliedCoupon || !this.totals.couponDiscount) {
+    return '';
+  }
+  
+  return `
+    ================================
+     CUPÓN APLICADO
+    ================================
+    Código: ${this.appliedCoupon.code}
+    ${this.appliedCoupon.name ? `Nombre: ${this.appliedCoupon.name}` : ''}
+    ${this.appliedCoupon.description ? `Desc: ${this.appliedCoupon.description}` : ''}
+    Descuento: $${this.totals.couponDiscount.toFixed(2)}
+    ================================
+  `;
 };
 
 ticketSchema.methods.generateTaxBreakdown = function generateTaxBreakdown() {
@@ -199,6 +255,7 @@ ticketSchema.methods.markAsPrinted = function markAsPrinted(userId) {
   }
   return this.save();
 };
+
 ticketSchema.methods.reprint = function reprint(userId) {
   this.printInfo.reprintCount += 1;
   this.printInfo.lastReprintAt = new Date();
@@ -216,4 +273,8 @@ ticketSchema.index({ 'transactionInfo.cashRegister': 1, createdAt: -1 });
 ticketSchema.index({ company: 1, disable: 1 });
 ticketSchema.index({ 'taxBreakdown.taxId': 1 });
 ticketSchema.index({ 'totals.totalTaxes': 1 });
+ticketSchema.index({ 'appliedCoupon.couponId': 1 });
+ticketSchema.index({ 'totals.couponCode': 1 });
+ticketSchema.index({ 'totals.couponDiscount': 1 });
+
 module.exports = mongoose.model('Tickets', ticketSchema, 'tickets');

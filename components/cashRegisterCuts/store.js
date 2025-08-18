@@ -24,7 +24,6 @@ async function createCashRegisterCut(cutData) {
     disable: false
   });
 
-  // Calcular resumen
   const salesSummary = {
     totalSales: 0, totalRefunds: 0, netSales: 0,
     cash: { sales: 0, refunds: 0, net: 0 },
@@ -34,7 +33,7 @@ async function createCashRegisterCut(cutData) {
     salesIds: sales.map(s => s._id) // eslint-disable-line no-underscore-dangle
   };
 
-  // Procesar ventas
+
   sales.forEach(sale => {
     const isRefund = sale.status === 'cancelled' || sale.refund;
     const amount = sale.total || 0;
@@ -48,7 +47,6 @@ async function createCashRegisterCut(cutData) {
     }
   });
 
-  // Calcular netos
   ['cash', 'card', 'mixed'].forEach(method => {
     salesSummary[method].net = salesSummary[method].sales - salesSummary[method].refunds;
     salesSummary.totalSales += salesSummary[method].sales;
@@ -56,7 +54,7 @@ async function createCashRegisterCut(cutData) {
   });
   salesSummary.netSales = salesSummary.totalSales - salesSummary.totalRefunds;
 
-  // Crear corte
+
   const newCut = new Model({
     cutNumber,
     cashRegister: cutData.cashRegister || 'CAJA-1',
@@ -135,7 +133,6 @@ async function generateCutPDFDirect(cutId, res) {
   res.setHeader('Content-Disposition', `inline; filename="corte-${cutId}.pdf"`);
   doc.pipe(res);
 
-  // Contenido del PDF
   doc.fontSize(18).text('CORTE DE CAJA', { align: 'center' });
   doc.fontSize(12).text('Mi Tienda POS', { align: 'center' });
   doc.moveDown(2);
@@ -181,7 +178,7 @@ async function generateCutPDFDirect(cutId, res) {
 
   doc.moveDown(2);
   doc.text('______________________     ______________________');
-  doc.text('  Firma del Cajero            Firma del Admin');
+  doc.text('  Firma del Cajero            Firma del Gerente ');
   doc.moveDown();
   doc.fontSize(8).text(`Generado: ${new Date().toLocaleString('es-MX')}`);
 

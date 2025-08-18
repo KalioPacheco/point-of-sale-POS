@@ -4,8 +4,10 @@ const controller = require('./controller');
 const store = require('./store');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const { validateTicket } = require('../../middleware/validation');
 
 const router = express.Router();
+
 
 
 const handleRequest = (req, res, promise) => {
@@ -23,7 +25,6 @@ const validateId = (field, message) => (req, res, next) => {
 };
 
 
-
 router.get('/store-config', passportConfig.isAuth, (req, res) => {
   const companyId = Helper.getCompanyId(req);
   return handleRequest(req, res, controller.getStoreInfo(companyId));
@@ -32,36 +33,38 @@ router.get('/store-config', passportConfig.isAuth, (req, res) => {
 router.put('/store-config', passportConfig.isAuth, (req, res) => {
   const storeInfo = req.body;
   const companyId = Helper.getCompanyId(req);
-  
+
   if (!storeInfo.name) {
     return response.error(req, res, 'Store name required', 400);
   }
-  
+
   return handleRequest(req, res, controller.updateStoreInfo(storeInfo, companyId));
 });
+
 
 
 router.post('/calculate-taxes', passportConfig.isAuth, (req, res) => {
   const { items } = req.body;
   const companyId = Helper.getCompanyId(req);
-  
+
   if (!items || !Array.isArray(items) || items.length === 0) {
     return response.error(req, res, 'Items array is required and cannot be empty', 400);
   }
-  
+
   return handleRequest(req, res, controller.calculateTicketTaxes(items, companyId));
 });
 
 router.get('/reports/taxes', passportConfig.isAuth, (req, res) => {
   const { startDate, endDate } = req.query;
   const companyId = Helper.getCompanyId(req);
-  
+
   if (!startDate || !endDate) {
     return response.error(req, res, 'Start date and end date are required', 400);
   }
-  
+
   return handleRequest(req, res, controller.getTaxReport(companyId, startDate, endDate));
 });
+
 
 
 router.post('/with-taxes', passportConfig.isAuth, (req, res) => {
@@ -90,6 +93,32 @@ router.post('/process-sale-with-taxes', passportConfig.isAuth, (req, res) => {
   const companyId = Helper.getCompanyId(req);
   return handleRequest(req, res, controller.processSaleTicketWithTaxes(saleData, userId, companyId));
 });
+
+
+
+router.post('/with-coupon', passportConfig.isAuth, (req, res) => {
+  const saleData = req.body;
+  const ticketConfig = {
+    cashierName: req.user?.name || 'Cajero',
+    cashRegister: req.body.cashRegister || 'CAJA-1',
+    storeName: req.body.storeName || 'Mi Tienda',
+    storeAddress: req.body.storeAddress || '',
+    storePhone: req.body.storePhone || '',
+    storeTaxId: req.body.storeTaxId || '',
+    storeEmail: req.body.storeEmail || ''
+  };
+  
+  return handleRequest(req, res, controller.createTicketWithCoupon(saleData, ticketConfig));
+});
+
+router.post('/process-sale-with-coupon', passportConfig.isAuth, (req, res) => {
+  const saleData = req.body;
+  const userId = Helper.getUserId(req);
+  const companyId = Helper.getCompanyId(req);
+  
+  return handleRequest(req, res, controller.processSaleTicketWithCoupon(saleData, userId, companyId));
+});
+
 
 
 router.post('/from-sale/:saleId?', passportConfig.isAuth, (req, res) => {
@@ -130,6 +159,8 @@ router.post('/process-refund', passportConfig.isAuth, (req, res) => {
   return handleRequest(req, res, controller.processRefundTicket(refundData, userId, companyId));
 });
 
+
+
 router.get('/stats', passportConfig.isAuth, (req, res) => {
   const filters = { 
     ...req.query, 
@@ -137,6 +168,8 @@ router.get('/stats', passportConfig.isAuth, (req, res) => {
   };
   return handleRequest(req, res, controller.getTicketStats(filters));
 });
+
+
 
 router.get('/:ticketId/data', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
   const { ticketId } = req.params;
@@ -161,6 +194,25 @@ router.get('/:ticketId/pdf', passportConfig.isAuth, validateId('ticketId'), (req
     });
 });
 
+router.get('/:ticketId/receipt-with-coupon', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+  const { ticketId } = req.params;
+  
+  return handleRequest(req, res, controller.generateTicketReceiptWithCoupon(ticketId));
+});
+
+router.get('/:ticketId/coupon-template', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+  const { ticketId } = req.params;
+  
+  controller.getTicketById(ticketId)
+    .then(ticket => {
+      const template = controller.getCouponReceiptTemplate(ticket);
+      response.success(req, res, { template }, 200);
+    })
+    .catch(err => response.error(req, res, err.message || 'Internal error', 500, err));
+});
+
+
+
 router.post('/:ticketId/reprint', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
   const { ticketId } = req.params;
   const userId = Helper.getUserId(req);
@@ -179,12 +231,14 @@ router.post('/:ticketId/cancel', passportConfig.isAuth, validateId('ticketId'), 
   return handleRequest(req, res, controller.cancelTicket(ticketId, reason, userId));
 });
 
+
+
 router.get('/:ticketId', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
   const { ticketId } = req.params;
   return handleRequest(req, res, controller.getTicketById(ticketId));
 });
 
-router.post('/', passportConfig.isAuth, (req, res) => {
+router.post('/', passportConfig.isAuth, validateTicket, (req, res) => {
   const ticketData = { 
     ...req.body, 
     companyId: Helper.getCompanyId(req) !== 'default-company-id' ? Helper.getCompanyId(req) : undefined
@@ -201,9 +255,10 @@ router.get('/', passportConfig.isAuth, (req, res) => {
 });
 
 
+
 router.get('/test/system', (req, res) => {
   response.success(req, res, {
-    message: 'Ticket system working with tax integration',
+    message: 'Ticket system working with tax integration and coupons',
     timestamp: new Date(),
     features: [
       'Create tickets from sales',
@@ -213,14 +268,17 @@ router.get('/test/system', (req, res) => {
       'Automatic tax calculation',
       'Tax breakdown reports',
       'Product-level tax rates',
-      'Tax preview calculations'
+      'Tax preview calculations',
+      ' Coupon integration',
+      ' Coupon receipts',
+      ' Coupon templates'
     ]
   }, 200);
 });
 
 router.get('/system/config', passportConfig.isAuth, (req, res) => {
   const companyId = Helper.getCompanyId(req);
-  
+
   response.success(req, res, {
     companyId,
     supportedFormats: ['58mm', '80mm'],
@@ -238,26 +296,30 @@ router.get('/system/config', passportConfig.isAuth, (req, res) => {
       taxReports: true,
       previewCalculations: true
     },
+    couponFeatures: { 
+      couponIntegration: true,
+      couponReceipts: true,
+      couponTemplates: true,
+      couponReports: true
+    }
   }, 200);
 });
 
-
 router.post('/demo/sale-with-taxes', passportConfig.isAuth, (req, res) => {
   const companyId = Helper.getCompanyId(req);
-  
 
   const demoSaleData = {
     ticketType: 'sale',
     items: [
       {
         productId: req.body.productId || '507f1f77bcf86cd799439013',
-        productName: 'Producto Demo',
+        productName: 'Producto ',
         quantity: 2,
         unitPrice: 100.00
       },
       {
         productId: req.body.productId2 || '507f1f77bcf86cd799439014',
-        productName: 'Producto Demo 2',
+        productName: 'Producto ',
         quantity: 1,
         unitPrice: 50.00
       }
@@ -277,8 +339,42 @@ router.post('/demo/sale-with-taxes', passportConfig.isAuth, (req, res) => {
     },
     company: companyId
   };
-  
+
   return handleRequest(req, res, controller.createTicketWithTaxes(demoSaleData));
 });
+
+
+router.post('/demo/sale-with-coupon', passportConfig.isAuth, (req, res) => {
+  const companyId = Helper.getCompanyId(req);
+
+  const demoSaleWithCoupon = {
+    // eslint-disable-next-line prefer-template
+    id: 'demo_sale_' + Date.now(),
+    products: [
+      {
+        productId: req.body.productId || 'demo_product_1',
+        quantity: 2,
+        price: 50
+      }
+    ],
+    subtotal: 100,
+    totalTaxes: 0,
+    total: 100,
+    couponCode: req.body.couponCode || 'VALID2025',
+    couponDiscount: req.body.couponDiscount || 20,
+    couponId: req.body.couponId || '689c2446c60d57ee2d0e26e8',
+    finalTotal: 80,
+    paymentMethod: 'efectivo',
+    cashReceived: 100,
+    change: 20,
+    company: companyId
+  };
+
+  return handleRequest(req, res, controller.createTicketWithCoupon(demoSaleWithCoupon, {
+    storeName: 'Tienda Demo',
+    cashierName: 'Demo Cashier'
+  }));
+});
+
 
 module.exports = router;

@@ -3,21 +3,21 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const cashMovementSchema = new Schema({
-  // Identificación
+
   movementNumber: { 
     type: String, 
     unique: true, 
     required: true 
   },
   
-  // Tipo de movimiento
+  
   type: { 
     type: String, 
     enum: ['sale', 'expense', 'withdrawal', 'initial_cash', 'change_denomination', 'refund', 'other'],
     required: true 
   },
   
-  // Información del movimiento
+ 
   amount: { 
     type: Number, 
     required: true 
@@ -30,14 +30,13 @@ const cashMovementSchema = new Schema({
   
   description: String,
   
-  // Método de pago
+
   paymentMethod: { 
     type: String, 
     enum: ['cash', 'card', 'mixed'],
     default: 'cash'
   },
   
-  // Referencias
   user: { 
     type: Schema.ObjectId, 
     ref: 'Users', 
@@ -49,19 +48,18 @@ const cashMovementSchema = new Schema({
     ref: 'Companies' 
   },
   
-  // Información adicional
+
   cashRegister: String,
   
-  // Referencia a venta (si aplica)
   saleReference: { 
     type: Schema.ObjectId, 
     ref: 'Sales' 
   },
   
-  // Comprobante
+
   receiptNumber: String,
   
-  // Control
+
   authorized: { 
     type: Boolean, 
     default: true 
@@ -82,7 +80,6 @@ const cashMovementSchema = new Schema({
   timestamps: true 
 });
 
-// Generar número de movimiento único
 cashMovementSchema.statics.generateMovementNumber = async function generateMovementNumber() {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
@@ -102,7 +99,6 @@ cashMovementSchema.statics.generateMovementNumber = async function generateMovem
   return `${prefix}-${sequence.toString().padStart(4, '0')}`;
 };
 
-// Método para obtener el signo del movimiento (entrada/salida)
 cashMovementSchema.methods.getMovementSign = function getMovementSign() {
   const inTypes = ['sale', 'initial_cash'];
   const outTypes = ['expense', 'withdrawal', 'refund'];
@@ -116,7 +112,6 @@ cashMovementSchema.methods.getMovementSign = function getMovementSign() {
   return 0; 
 };
 
-// Método para obtener descripción del tipo
 cashMovementSchema.methods.getTypeDescription = function getTypeDescription() {
   const descriptions = {
     sale: 'Venta',
@@ -131,7 +126,6 @@ cashMovementSchema.methods.getTypeDescription = function getTypeDescription() {
   return descriptions[this.type] || this.type;
 };
 
-// Método para formatear el movimiento
 cashMovementSchema.methods.getFormattedMovement = function getFormattedMovement() {
   const sign = this.getMovementSign();
   let signSymbol = '±';

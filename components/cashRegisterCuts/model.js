@@ -3,20 +3,16 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const cashRegisterCutSchema = new Schema({
-  // Identificación
   cutNumber: { type: String, unique: true, required: true },
   cashRegister: { type: String, required: true },
   
-  // Personal
   cashier: { type: Schema.ObjectId, ref: 'Users', required: true },
   administrator: { type: Schema.ObjectId, ref: 'Users', required: true },
-  
-  // Fechas
+ 
   shiftStart: { type: Date, required: true },
   shiftEnd: { type: Date, required: true },
   cutDate: { type: Date, default: Date.now },
   
-  // Resumen de ventas
   salesSummary: {
     totalSales: { type: Number, default: 0 },
     totalRefunds: { type: Number, default: 0 },
@@ -32,7 +28,6 @@ const cashRegisterCutSchema = new Schema({
     taxesAmount: { type: Number, default: 0 }     
   },
   
-  // Control de efectivo
   cashControl: {
     expectedCash: { type: Number, required: true },
     actualCash: { type: Number, required: true },
@@ -47,7 +42,6 @@ const cashRegisterCutSchema = new Schema({
 }, { timestamps: true });
 
 
-// Generar número de corte único
 cashRegisterCutSchema.statics.generateCutNumber = async function generateCutNumber(cashRegister) {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
@@ -108,7 +102,7 @@ cashRegisterCutSchema.methods.getFormatWithTaxes = function getFormatWithTaxes()
   lines.push(`Período: ${new Date(this.shiftStart).toLocaleTimeString()} - ${new Date(this.shiftEnd).toLocaleTimeString()}`);
   lines.push('---------------------------------');
   
-  // Resumen de ventas
+ 
   lines.push('RESUMEN DE VENTAS:');
   lines.push(`Ventas: ${' '.repeat(20)} ${this.salesSummary.salesCount}`);
   lines.push(`Subtotal: ${' '.repeat(15)} $${this.salesSummary.subtotalAmount.toFixed(2)}`);
@@ -120,8 +114,7 @@ cashRegisterCutSchema.methods.getFormatWithTaxes = function getFormatWithTaxes()
   lines.push('---------------------------------');
   lines.push(`TOTAL: ${' '.repeat(18)} $${this.salesSummary.netSales.toFixed(2)}`);
   lines.push('=================================');
-  
-  // Control de efectivo
+ 
   lines.push('CONTROL DE EFECTIVO:');
   lines.push(`Esperado: ${' '.repeat(15)} $${this.cashControl.expectedCash.toFixed(2)}`);
   lines.push(`Real: ${' '.repeat(19)} $${this.cashControl.actualCash.toFixed(2)}`);

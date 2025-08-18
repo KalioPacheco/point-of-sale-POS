@@ -2,7 +2,7 @@ const Model = require('./model');
 
 async function createMovement(movementData) {
   try {
-    // Generar número de movimiento único
+
     const movementNumber = await Model.generateMovementNumber();
     
     const movement = new Model({
@@ -36,7 +36,7 @@ async function getMovements(filters = {}) {
   try {
     const query = { disable: false };
     
-    // Filtros
+    
     if (filters.companyId && filters.companyId !== 'default-company-id') {
       query.company = filters.companyId;
     }

@@ -46,9 +46,8 @@ const variantSchema = new Schema({
   updatedAt: Date
 });
 
-// ===== MODELO PRINCIPAL DE PRODUCTOS (ORIGINAL + IMPUESTOS) =====
+
 const productSchema = new Schema({
-  // ===== CAMPOS ORIGINALES (SIN CAMBIOS) =====
   name: String,
   price: Number,
   folio: {
@@ -69,7 +68,7 @@ const productSchema = new Schema({
     required: false
   },
   description: String,
-  stock: Number, // Stock general (para productos sin variantes)
+  stock: Number, 
   photo: String,
   disable: {
     type: Boolean,
@@ -126,14 +125,11 @@ productSchema.methods.getTotalStock = function getTotalStock() {
   return variantStock;
 };
 
-// Método para verificar si tiene stock disponible
 productSchema.methods.hasStock = function hasStock() {
   return this.getTotalStock() > 0;
 };
 
-// ===== 🆕 MÉTODOS DE IMPUESTOS OPTIMIZADOS =====
 
-// Método para precio con impuesto
 productSchema.methods.getPriceWithTax = function getPriceWithTax() {
   if (this.taxExempt || !this.taxRate) {
     return this.price || 0;
@@ -142,7 +138,6 @@ productSchema.methods.getPriceWithTax = function getPriceWithTax() {
   return (this.price || 0) + tax;
 };
 
-// Método para obtener solo el impuesto
 productSchema.methods.getTaxAmount = function getTaxAmount() {
   if (this.taxExempt || !this.taxRate) {
     return 0;

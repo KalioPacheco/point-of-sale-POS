@@ -1,11 +1,16 @@
+/* eslint-disable no-undef */
 const express = require('express');
 const mongoose = require('mongoose');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const { validateProduct } = require('../../middleware/validation');
+
 
 const router = express.Router();
+
+
 
 const addProduct = function addProduct(req, res) {
   const product = req.body;
@@ -47,7 +52,6 @@ const updateProduct = function updateProduct(req, res) {
   const { productId } = req.params;
   const companyId = Helper.getCompanyId(req);
   
-  // Solo agregar company si es un ObjectId válido
   if (companyId !== 'default-company-id' && mongoose.Types.ObjectId.isValid(companyId)) {
     product.company = companyId;
   }
@@ -189,8 +193,6 @@ const getProductStock = function getProductStock(req, res) {
   
   return undefined;
 };
-
-
 const addVariant = function addVariant(req, res) {
   const { productId } = req.params;
   const variantData = req.body;
@@ -267,9 +269,92 @@ const enableVariant = function enableVariant(req, res) {
   return undefined;
 };
 
-router.post('/', passportConfig.isAuth, addProduct);
+const checkCouponEligibility = function checkCouponEligibility(req, res) {
+  const { productIds, couponId } = req.body;
+
+  if (!productIds || !couponId) {
+    return response.error(req, res, 'Product IDs and Coupon ID are required', 400);
+  }
+
+  controller
+    .checkCouponEligibility(productIds, couponId)
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error checking coupon eligibility:', err);
+      response.error(req, res, err.message || 'Error checking coupon eligibility', 500, err);
+    });
+  
+  return undefined;
+};
+
+const calculatePriceWithCoupon = function calculatePriceWithCoupon(req, res) {
+  const { productId, couponCode, quantity = 1 } = req.body;
+  const companyId = Helper.getCompanyId(req);
+
+  if (!productId || !couponCode || !companyId) {
+    return response.error(req, res, 'Product ID, coupon code, and company are required', 400);
+  }
+
+  controller
+    .calculateProductPriceWithCoupon(productId, couponCode, companyId, quantity)
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error calculating price with coupon:', err);
+      response.error(req, res, err.message || 'Error calculating price with coupon', 500, err);
+    });
+  
+  return undefined;
+};
+
+const getEligibleForCoupons = function getEligibleForCoupons(req, res) {
+  const companyId = Helper.getCompanyId(req);
+  const { productIds } = req.query;
+
+  controller
+    .getProductsEligibleForCoupons(
+      companyId,
+      productIds ? productIds.split(',') : null
+    )
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error getting eligible products:', err);
+      response.error(req, res, err.message || 'Error getting eligible products', 500, err);
+    });
+  
+  return undefined;
+};
+
+const getProductsByCategories = function getProductsByCategories(req, res) {
+  const { categoryIds } = req.body;
+  const companyId = Helper.getCompanyId(req);
+
+  if (!categoryIds || !Array.isArray(categoryIds)) {
+    return response.error(req, res, 'Category IDs array is required', 400);
+  }
+
+  controller
+    .getProductsByCategories(categoryIds, companyId)
+    .then(data => {
+      response.success(req, res, data, 200);
+    })
+    .catch(err => {
+      console.error('Error getting products by categories:', err);
+      response.error(req, res, err.message || 'Error getting products by categories', 500, err);
+    });
+  
+  return undefined;
+};
+
+
 router.get('/', passportConfig.isAuth, listProducts);
-router.get('/:productId', passportConfig.isAuth, listProducts);
+router.post('/', passportConfig.isAuth, validateProduct, addProduct); 
+router.patch('/:productId', passportConfig.isAuth, validateProduct, updateProduct);
 router.patch('/:productId', passportConfig.isAuth, updateProduct);
 router.delete('/:productId', passportConfig.isAuth, removeProduct);
 router.put('/:productId/stock/add', passportConfig.isAuth, addStock);
@@ -282,5 +367,9 @@ router.put('/:productId/variants/:variantId/stock/add', passportConfig.isAuth, a
 router.put('/:productId/variants/:variantId/disable', passportConfig.isAuth, disableVariant);
 router.put('/:productId/variants/:variantId/enable', passportConfig.isAuth, enableVariant);
 router.get('/reports/low-stock', passportConfig.isAuth, getLowStockProducts);
+router.post('/check-coupon-eligibility', passportConfig.isAuth, checkCouponEligibility);
+router.post('/calculate-price-with-coupon', passportConfig.isAuth, calculatePriceWithCoupon);
+router.get('/eligible-for-coupons', passportConfig.isAuth, getEligibleForCoupons);
+router.post('/by-categories', passportConfig.isAuth, getProductsByCategories);
 
 module.exports = router;

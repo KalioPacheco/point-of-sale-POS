@@ -1,40 +1,43 @@
+const mongoose = require('mongoose');
 const Model = require('./model');
 
 function addCategory(category) {
-  const neCategories = new Model(category);
-  return neCategories.save();
+  const newCategory = new Model(category);
+  return newCategory.save();
 }
 
-function listCategories(categoryId, companyId) {
-  return new Promise((resolve, reject) => {
-    let filter = {};
-    if (categoryId) {
-      filter = {
-        _id: categoryId,
-      };
+async function listCategories(categoryId, companyId) {
+  const filter = {};
+  
+  if (categoryId) {
+    filter.id = categoryId;
+  }
+
+  
+  if (companyId && companyId !== 'default-company-id') {
+    if (mongoose.Types.ObjectId.isValid(companyId)) {
+      filter.company = companyId;
     }
+  }
 
-    filter.company = companyId;
-    filter.disable = false;
+  filter.disable = false;
 
-    Model.find(filter)
-      .populate('createdBy')
-      .populate('company')
-      .exec((err, populated) => {
-        if (err) {
-          reject(err);
-          return false;
-        }
-        resolve(populated);
-        return true;
-      });
-  });
+  const categories = await Model.find(filter)
+    .populate('createdBy')
+    .populate('company')
+    .exec();
+    
+  return categories;
 }
 
 async function updateCategory(categoryId, category) {
   const foundCategory = await Model.findOne({
     _id: categoryId,
   });
+
+  if (!foundCategory) {
+    throw new Error('Category not found');
+  }
 
   const { name = '' } = category;
 
@@ -52,6 +55,10 @@ async function removeCategory(categoryId) {
   const foundCategory = await Model.findOne({
     _id: categoryId,
   });
+
+  if (!foundCategory) {
+    throw new Error('Category not found');
+  }
 
   foundCategory.disable = true;
 

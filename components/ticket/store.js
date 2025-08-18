@@ -99,8 +99,9 @@ async function createTicket(ticketData) {
       format: ticketData.format || {},
       notes: ticketData.notes,
       company: ticketData.companyId,
-
-      taxBreakdown: ticketData.taxBreakdown || []
+      taxBreakdown: ticketData.taxBreakdown || [],
+      coupon: ticketData.coupon || null,
+      discount: ticketData.discount || null
     });
 
     newTicket.calculateTotals();
@@ -115,7 +116,9 @@ async function createTicket(ticketData) {
         total: savedTicket.totals.total,
         subtotal: savedTicket.totals.subtotal,
         totalTaxes: savedTicket.totals.totalTaxes,
-        taxBreakdown: savedTicket.taxBreakdown
+        taxBreakdown: savedTicket.taxBreakdown,
+        discounts: savedTicket.totals.discounts,
+        coupon: savedTicket.coupon
       },
       message: `Ticket ${ticketNumber} created`
     };
@@ -126,6 +129,62 @@ async function createTicket(ticketData) {
   }
 }
 
+const mapSaleToTicketData = (sale, storeInfo, companyId) => {
+  const items = sale.itemsPOS?.length > 0 
+    ? sale.itemsPOS.map(item => ({
+        productId: item.product?.id || item.product,
+        productName: item.productName || item.product?.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: item.unitPrice * item.quantity,
+        totalPrice: item.totalPrice,
+        variant: item.variant,
+        taxes: item.taxes || [],
+        totalTaxes: item.totalTaxes || 0
+      }))
+    : [{
+        productName: 'Venta',
+        quantity: 1,
+        unitPrice: sale.total,
+        subtotal: sale.total,
+        totalPrice: sale.total,
+        taxes: [],
+        totalTaxes: 0
+      }];
+
+  return {
+    ticketType: 'sale',
+    saleId: sale.id,
+    storeInfo,
+    transactionInfo: {
+      date: sale.createdAt,
+      cashRegister: sale.cashRegister || 'CAJA-1',
+      cashier: {
+        id: sale.createdBy?.id,
+        name: sale.createdBy?.name || sale.createdBy?.userName || 'Cajero'
+      }
+    },
+    items,
+    totals: {
+      subtotal: sale.subtotal || sale.total,
+      totalTaxes: sale.totalTaxes || 0,
+      total: sale.total,
+      discounts: sale.discounts || 0,
+      couponDiscount: sale.couponDiscount || 0,
+      couponCode: sale.couponCode,
+      couponName: sale.couponName
+    },
+    payment: {
+      method: sale.paymentMethod || 'efectivo',
+      details: sale.paymentDetails || {}
+    },
+    taxBreakdown: sale.taxBreakdown || [],
+    coupon: sale.coupon || null,
+    discount: sale.discount || null,
+    companyId
+  };
+};
+
 async function createTicketFromSaleWithTaxes(saleId, userId, companyId) {
   try {
     const sale = await SalesModel.findById(saleId)
@@ -135,54 +194,9 @@ async function createTicketFromSaleWithTaxes(saleId, userId, companyId) {
     if (!sale) throw new Error('Sale not found');
 
     const storeInfo = await getStoreInfo(companyId);
+    const ticketData = mapSaleToTicketData(sale, storeInfo, companyId);
     
-    const items = sale.itemsPOS?.length > 0 
-      ? sale.itemsPOS.map(item => ({
-          productId: item.product?.id || item.product,
-          productName: item.productName || item.product?.name,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          subtotal: item.unitPrice * item.quantity,
-          totalPrice: item.totalPrice,
-          variant: item.variant,
-          taxes: item.taxes || [],
-          totalTaxes: item.totalTaxes || 0
-        }))
-      : [{
-          productName: 'Venta',
-          quantity: 1,
-          unitPrice: sale.total,
-          subtotal: sale.total,
-          totalPrice: sale.total,
-          taxes: [],
-          totalTaxes: 0
-        }];
-
-    return createTicket({
-      ticketType: 'sale',
-      saleId: sale.id,
-      storeInfo,
-      transactionInfo: {
-        date: sale.createdAt,
-        cashRegister: sale.cashRegister || 'CAJA-1',
-        cashier: {
-          id: sale.createdBy?.id,
-          name: sale.createdBy?.name || sale.createdBy?.userName || 'Cajero'
-        }
-      },
-      items,
-      totals: {
-        subtotal: sale.subtotal || sale.total,
-        totalTaxes: sale.totalTaxes || 0,
-        total: sale.total
-      },
-      payment: {
-        method: sale.paymentMethod || 'efectivo',
-        details: sale.paymentDetails || {}
-      },
-      taxBreakdown: sale.taxBreakdown || [],
-      companyId
-    });
+    return createTicket(ticketData);
 
   } catch (error) {
     console.error('Error creating ticket from sale with taxes:', error);
@@ -199,45 +213,11 @@ async function createTicketFromSale(saleId, userId, companyId) {
     if (!sale) throw new Error('Sale not found');
 
     const storeInfo = await getStoreInfo(companyId);
-    const items = sale.itemsPOS?.length > 0 
-      ? sale.itemsPOS.map(item => ({
-          productName: item.productName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
-          variant: item.variant
-        }))
-      : [{
-          productName: 'Venta',
-          quantity: 1,
-          unitPrice: sale.total,
-          totalPrice: sale.total
-        }];
-
-    return createTicket({
-      ticketType: 'sale',
-      saleId: sale.id,
-      storeInfo,
-      transactionInfo: {
-        date: sale.createdAt,
-        cashRegister: sale.cashRegister || 'CAJA-1',
-        cashier: {
-          id: sale.createdBy?.id,
-          name: sale.createdBy?.name || sale.createdBy?.userName || 'Cajero'
-        }
-      },
-      items,
-      totals: {
-        subtotal: sale.subtotal || sale.total,
-        taxes: sale.taxes || 0,
-        total: sale.total
-      },
-      payment: {
-        method: sale.paymentMethod || 'efectivo',
-        details: sale.paymentDetails || {}
-      },
-      companyId
-    });
+    const ticketData = mapSaleToTicketData(sale, storeInfo, companyId);
+    ticketData.totals.taxes = sale.taxes || 0;
+    delete ticketData.totals.totalTaxes;
+    
+    return createTicket(ticketData);
 
   } catch (error) {
     console.error('Error creating ticket from sale:', error);
@@ -245,7 +225,7 @@ async function createTicketFromSale(saleId, userId, companyId) {
   }
 }
 
-async function createTicketFromCut(cutId, _nusedUserId, companyId) {
+async function createTicketFromCut(cutId, _unusedUserId, companyId) {
   try {
     const cut = await CashRegisterCutsModel.findById(cutId)
       .populate('cashier', 'userName name');
@@ -357,10 +337,12 @@ async function getTicketsByDateRange(companyId, startDate, endDate, statuses = [
   }
 }
 
-
 async function generateTicketData(ticketId) {
   try {
     const ticket = await getTicketById(ticketId);
+    const couponCode = ticket.totals?.couponCode || ticket.coupon?.code || ticket.discount?.couponCode;
+    const couponName = ticket.totals?.couponName || ticket.coupon?.description || ticket.discount?.description;
+    const discountAmount = ticket.totals?.couponDiscount || ticket.totals?.discounts || ticket.discount?.amount || 0;
 
     const data = {
       storeName: ticket.storeInfo.name,
@@ -388,7 +370,7 @@ async function generateTicketData(ticketId) {
       subtotal: ticket.totals.subtotal,
       taxes: ticket.totals.taxes || ticket.totals.totalTaxes,
       totalTaxes: ticket.totals.totalTaxes || ticket.totals.taxes, 
-      discounts: ticket.totals.discounts,
+      discounts: discountAmount,
       total: ticket.totals.total,
       taxBreakdown: ticket.taxBreakdown || [],
       paymentMethod: ticket.payment.method,
@@ -397,11 +379,15 @@ async function generateTicketData(ticketId) {
       cashAmount: ticket.payment.details?.cashAmount,
       cardAmount: ticket.payment.details?.cardAmount,
       customerName: ticket.transactionInfo.customer?.name,
-      notes: ticket.notes
+      notes: ticket.notes,
+      couponCode,
+      couponName,
+      couponDescription: couponName,
+      discountAmount
     };
 
-    if (!ticket.printInfo.printed) {
-      await ticket.markAsPrinted();
+    if (!ticket.printInfo?.printed) {
+      await ticket.markAsPrinted?.();
     }
 
     return data;
@@ -423,6 +409,8 @@ async function generateTicketPDF(ticketId, format, res) {
       res.setHeader('Content-Disposition', `inline; filename="ticket-${ticketId}.pdf"`);
       doc.pipe(res);
     }
+
+    // HEADER
     doc.fontSize(14).text(data.storeName.toUpperCase(), { align: 'center' });
     doc.moveDown(0.3);
     doc.fontSize(8).text(data.storeAddress, { align: 'center' });
@@ -435,9 +423,13 @@ async function generateTicketPDF(ticketId, format, res) {
       doc.moveDown(0.2);
       doc.text(data.storeEmail, { align: 'center' });
     }
+
+    // TICKET INFO
     doc.moveDown(0.5);
     doc.fontSize(8).text(`${data.ticketNumber}          ${data.date} ${data.time}`, { align: 'center' });
     doc.moveDown(0.8);
+
+    // PRODUCTOS/ITEMS
     if (data.ticketType === 'sale' && data.items.length > 0) {
       doc.fontSize(7);
       doc.text('CANT  PCIO U.  %DESC  IMPORTE');
@@ -469,6 +461,37 @@ async function generateTicketPDF(ticketId, format, res) {
       doc.text('--------------------------------');
       doc.moveDown(0.4);
     }
+
+    // SUBTOTAL
+    if (data.subtotal || (data.totalTaxes > 0 || data.discounts > 0)) {
+      doc.fontSize(8);
+      const baseSubtotal = data.subtotal || (data.total + (data.discounts || 0) - (data.totalTaxes || 0));
+      doc.text('SUBTOTAL:', 10, doc.y, { width: width - 80 });
+      doc.text(`$${baseSubtotal.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
+      doc.moveDown(0.3);
+    }
+
+    if (data.discounts > 0 || data.couponCode) {
+      doc.fontSize(8);
+      
+
+      if (data.couponCode) {
+        const couponText = data.couponName ? data.couponName : `CUPÓN: ${data.couponCode}`;
+        doc.text(couponText);
+        doc.moveDown(0.2);
+      }
+
+      if (data.discounts > 0) {
+        doc.text('DESCUENTO:', 10, doc.y, { width: width - 80 });
+        doc.text(`-$${data.discounts.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
+        doc.moveDown(0.3);
+      }
+      
+      doc.text('--------------------------------');
+      doc.moveDown(0.3);
+    }
+
+    // IMPUESTOS
     if (data.taxBreakdown && data.taxBreakdown.length > 0 && data.totalTaxes > 0) {
       doc.fontSize(8);
       doc.text('IMPUESTOS:');
@@ -480,25 +503,20 @@ async function generateTicketPDF(ticketId, format, res) {
         doc.moveDown(0.2);
       });
       
+      doc.text('TOTAL IMPUESTOS:', 10, doc.y, { width: width - 80 });
+      doc.text(`$${data.totalTaxes.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
+      doc.moveDown(0.3);
+      
       doc.text('--------------------------------');
       doc.moveDown(0.3);
     }
 
-    if (data.subtotal && data.totalTaxes > 0) {
-      doc.fontSize(8);
-      doc.text('SUBTOTAL:', 10, doc.y, { width: width - 80 });
-      doc.text(`$${data.subtotal.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
-      doc.moveDown(0.3);
-      
-      doc.text('IMPUESTOS:', 10, doc.y, { width: width - 80 });
-      doc.text(`$${data.totalTaxes.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
-      doc.moveDown(0.3);
-    }
     doc.fontSize(10);
     doc.text('TOTAL:', 10, doc.y, { width: width - 80 });
     doc.text(`$${data.total.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
     doc.fontSize(8);
     doc.moveDown(0.5);
+
     const methods = {
       efectivo: 'EFECTIVO',
       tarjeta: 'TARJETA', 
@@ -531,7 +549,6 @@ async function generateTicketPDF(ticketId, format, res) {
     doc.text('CAJERO:');
     doc.text(data.cashier || 'N/A');
     doc.moveDown(0.5);
-    
     doc.fontSize(6);
     doc.text(`Generado: ${new Date().toLocaleString('es-MX')}`, { align: 'center' });
 
@@ -629,11 +646,26 @@ async function getTicketStats(filters = {}) {
   }
 }
 
-
-async function processSaleTicket(saleData, userId, companyId) {
+const createSaleTicket = async (saleData, userId, companyId, withTaxes = false) => {
   try {
     const storeInfo = await getStoreInfo(companyId);
     const user = await UsersModel.findById(userId);
+    
+    const totals = {
+      subtotal: saleData.subtotal || 0,
+      discounts: saleData.discounts || 0,
+      couponDiscount: saleData.couponDiscount || 0,
+      couponCode: saleData.couponCode,
+      couponName: saleData.couponName,
+      total: saleData.total || 0
+    };
+
+    if (withTaxes) {
+      totals.totalTaxes = saleData.totalTaxes || 0;
+      totals.taxes = saleData.taxes || saleData.totalTaxes || 0;
+    } else {
+      totals.taxes = saleData.taxes || 0;
+    }
     
     return createTicket({
       ticketType: 'sale',
@@ -648,16 +680,14 @@ async function processSaleTicket(saleData, userId, companyId) {
         customer: saleData.customer || {}
       },
       items: saleData.items || [],
-      totals: {
-        subtotal: saleData.subtotal || 0,
-        taxes: saleData.taxes || 0,
-        discounts: saleData.discounts || 0,
-        total: saleData.total || 0
-      },
+      totals,
       payment: {
         method: saleData.paymentMethod || 'efectivo',
         details: saleData.paymentDetails || {}
       },
+      taxBreakdown: withTaxes ? (saleData.taxBreakdown || []) : [],
+      coupon: saleData.coupon || null,
+      discount: saleData.discount || null,
       notes: saleData.notes,
       companyId
     });
@@ -665,46 +695,14 @@ async function processSaleTicket(saleData, userId, companyId) {
     console.error('Error processing sale:', error);
     throw error;
   }
+};
+
+async function processSaleTicket(saleData, userId, companyId) {
+  return createSaleTicket(saleData, userId, companyId, false);
 }
 
 async function processSaleTicketWithTaxes(saleData, userId, companyId) {
-  try {
-    const storeInfo = await getStoreInfo(companyId);
-    const user = await UsersModel.findById(userId);
-    
-    return createTicket({
-      ticketType: 'sale',
-      storeInfo,
-      transactionInfo: {
-        date: new Date(),
-        cashRegister: saleData.cashRegister || 'CAJA-1',
-        cashier: {
-          id: userId,
-          name: user?.name || user?.userName || 'Cajero'
-        },
-        customer: saleData.customer || {}
-      },
-      items: saleData.items || [], 
-      totals: {
-        subtotal: saleData.subtotal || 0,
-        totalTaxes: saleData.totalTaxes || 0, 
-        taxes: saleData.taxes || saleData.totalTaxes || 0,
-        discounts: saleData.discounts || 0,
-        total: saleData.total || 0
-      },
-      payment: {
-        method: saleData.paymentMethod || 'efectivo',
-        details: saleData.paymentDetails || {}
-      },
-   
-      taxBreakdown: saleData.taxBreakdown || [],
-      notes: saleData.notes,
-      companyId
-    });
-  } catch (error) {
-    console.error('Error processing sale with taxes:', error);
-    throw error;
-  }
+  return createSaleTicket(saleData, userId, companyId, true);
 }
 
 async function processRefundTicket(refundData, userId, companyId) {

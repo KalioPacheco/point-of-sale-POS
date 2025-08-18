@@ -1,6 +1,5 @@
 const store = require('./store');
 
-// Validaciones
 const validateCutData = (cutData) => {
   if (!cutData.cashRegister) throw new Error('Cash register required');
   if (!cutData.cashierId) throw new Error('Cashier ID required');

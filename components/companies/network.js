@@ -2,6 +2,7 @@ const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
+const { validateCompany } = require('../../middleware/validation');
 
 const router = express.Router();
 
@@ -56,8 +57,9 @@ const removeCompany = function (req, res) {
 
 router.get('/', passportConfig.isAuth, listCompanies);
 router.get('/:companyId', passportConfig.isAuth, listCompanies);
-router.post('/', passportConfig.isAuth, addCompany);
-router.patch('/:companyId', passportConfig.isAuth, updateCompany);
+router.post('/', passportConfig.isAuth, validateCompany, addCompany);
+router.patch('/:companyId', passportConfig.isAuth, validateCompany, updateCompany);
 router.delete('/:companyId', passportConfig.isAuth, removeCompany);
+
 
 module.exports = router;

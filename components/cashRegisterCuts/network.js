@@ -4,6 +4,7 @@ const controller = require('./controller');
 const store = require('./store');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const { validateCashRegisterCut } = require('../../middleware/validation');
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ const handleRequest = (req, res, promise) => {
     .catch(err => response.error(req, res, err.message, 500, err));
 };
 
-router.post('/create', passportConfig.isAuth, (req, res) => {
+router.post('/create', passportConfig.isAuth, validateCashRegisterCut, (req, res) => {
   const cutData = { 
     ...req.body, 
     administratorId: Helper.getUserId(req),
@@ -65,5 +66,6 @@ router.get('/:cutId/pdf', passportConfig.isAuth, (req, res) => {
 router.get('/:cutId', passportConfig.isAuth, (req, res) => {
   handleRequest(req, res, controller.getCashRegisterCutById(req.params.cutId));
 });
+
 
 module.exports = router;

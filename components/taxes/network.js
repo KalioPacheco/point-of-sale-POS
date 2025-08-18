@@ -1,5 +1,7 @@
 const express = require('express');
 const controller = require('./controller');
+const { validateTax } = require('../../middleware/validation');
+
 
 const router = express.Router();
 
@@ -20,7 +22,7 @@ const sendResponse = {
   }
 };
 
-router.post('/config', async (req, res) => {
+router.post('/config', validateTax, async (req, res) => { 
   try {
     const taxData = {
       ...req.body,
@@ -54,7 +56,7 @@ router.get('/config/detail/:taxConfigId', async (req, res) => {
   }
 });
 
-router.put('/config/:taxConfigId', async (req, res) => {
+router.put('/config/:taxConfigId', validateTax, async (req, res) => {
   try {
     const { taxConfigId } = req.params;
     const result = await controller.updateTaxConfig(taxConfigId, req.body);
@@ -162,5 +164,4 @@ router.get('/test', (req, res) => {
     ]
   });
 });
-
 module.exports = router;

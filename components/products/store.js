@@ -314,7 +314,7 @@ async function addVariant(productId, variantData) {
     attributes: variantData.attributes || {},
     stock: variantData.stock || 0,
     price: variantData.price || null,
-    active: variantData.active !== false, // Por defecto true
+    active: variantData.active !== false, 
     photo: variantData.photo,
     createdAt: new Date()
   };
