@@ -1,72 +1,38 @@
 const PDFDocument = require('pdfkit');
 const Model = require('./model');
-const SalesModel = require('../sales/model');
 const UsersModel = require('../users/model');
 
-// CREAR CORTE
+
 async function createCashRegisterCut(cutData) {
-  // Validar admin
+  
   const admin = await UsersModel.findById(cutData.administratorId);
   if (!admin?.privileges?.full) throw new Error('User does not have administrator privileges');
 
-  // Validar cajero
+ 
   const cashier = await UsersModel.findById(cutData.cashierId);
   if (!cashier) throw new Error('Cashier not found');
 
-  // Generar número de corte
-  const cutNumber = await Model.generateCutNumber(cutData.cashRegister || 'CAJA-1');
-
-  // Buscar ventas del turno
-  const sales = await SalesModel.find({
-    cashRegister: cutData.cashRegister,
-    createdBy: cutData.cashierId,
-    createdAt: { $gte: new Date(cutData.shiftStart), $lte: new Date(cutData.shiftEnd) },
-    disable: false
-  });
-
-  const salesSummary = {
-    totalSales: 0, totalRefunds: 0, netSales: 0,
-    cash: { sales: 0, refunds: 0, net: 0 },
-    card: { sales: 0, refunds: 0, net: 0 },
-    mixed: { sales: 0, refunds: 0, net: 0 },
-    salesCount: 0, refundsCount: 0,
-    salesIds: sales.map(s => s._id) // eslint-disable-line no-underscore-dangle
-  };
-
-
-  sales.forEach(sale => {
-    const isRefund = sale.status === 'cancelled' || sale.refund;
-    const amount = sale.total || 0;
-    
-    if (isRefund) {
-      salesSummary.refundsCount += 1;
-      if (salesSummary[sale.paymentMethod]) salesSummary[sale.paymentMethod].refunds += amount;
-    } else {
-      salesSummary.salesCount += 1;
-      if (salesSummary[sale.paymentMethod]) salesSummary[sale.paymentMethod].sales += amount;
-    }
-  });
-
-  ['cash', 'card', 'mixed'].forEach(method => {
-    salesSummary[method].net = salesSummary[method].sales - salesSummary[method].refunds;
-    salesSummary.totalSales += salesSummary[method].sales;
-    salesSummary.totalRefunds += salesSummary[method].refunds;
-  });
-  salesSummary.netSales = salesSummary.totalSales - salesSummary.totalRefunds;
-
-
+ 
+  const cutNumber = await Model.generateCutNumber(cutData.cashRegister || 'CAJA');
   const newCut = new Model({
     cutNumber,
-    cashRegister: cutData.cashRegister || 'CAJA-1',
+    cashRegister: cutData.cashRegister || 'CAJA',
     cashier: cutData.cashierId,
     administrator: cutData.administratorId,
     shiftStart: new Date(cutData.shiftStart),
     shiftEnd: new Date(cutData.shiftEnd),
-    salesSummary,
+    salesSummary: {
+      totalSales: 0, totalRefunds: 0, netSales: 0,
+      cash: { sales: 0, refunds: 0, net: 0 },
+      card: { sales: 0, refunds: 0, net: 0 },
+      mixed: { sales: 0, refunds: 0, net: 0 },
+      salesCount: 0, refundsCount: 0,
+      salesIds: []
+    },
     cashControl: {
-      expectedCash: salesSummary.cash.net + (cutData.initialCash || 0),
+      expectedCash: cutData.actualCash || 0,
       actualCash: cutData.actualCash || 0,
-      difference: (cutData.actualCash || 0) - (salesSummary.cash.net + (cutData.initialCash || 0)),
+      difference: 0,
       initialCash: cutData.initialCash || 0
     },
     notes: cutData.notes,
@@ -74,14 +40,27 @@ async function createCashRegisterCut(cutData) {
     status: 'closed'
   });
 
+  console.log('Calculando ventas para el corte...');
+  await newCut.calculateTaxes();
+
+  newCut.cashControl.expectedCash = newCut.salesSummary.netSales + (cutData.initialCash || 0);
+  newCut.cashControl.actualCash = cutData.actualCash || 0;
+  newCut.cashControl.difference = newCut.cashControl.actualCash - newCut.cashControl.expectedCash;
+
   const savedCut = await newCut.save();
+  
+  console.log(`Corte creado: ${savedCut.cutNumber}`);
+  console.log(`Total de ventas: $${savedCut.salesSummary.netSales}`);
+  console.log(`Cantidad de ventas: ${savedCut.salesSummary.salesCount}`);
+
   return {
     success: true,
     cut: {
-      id: savedCut._id, // eslint-disable-line no-underscore-dangle
+      id: savedCut.id,
       cutNumber: savedCut.cutNumber,
       total: savedCut.salesSummary.netSales,
-      difference: savedCut.cashControl.difference
+      difference: savedCut.cashControl.difference,
+      salesCount: savedCut.salesSummary.salesCount
     },
     message: `Cut ${cutNumber} created successfully`
   };
@@ -119,6 +98,7 @@ async function getCashRegisterCutById(cutId) {
   if (!cut) throw new Error('Cut not found');
   return cut;
 }
+
 async function generateCutPDFDirect(cutId, res) {
   const cut = await Model.findById(cutId);
   if (!cut) throw new Error('Cut not found');

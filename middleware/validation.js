@@ -1,4 +1,4 @@
-const { body, validationResult } = require('express-validator'); 
+const { body, validationResult } = require('express-validator');
 
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
@@ -8,7 +8,7 @@ const handleValidationErrors = (req, res, next) => {
       details: errors.array()
     });
   }
-  return next(); 
+  return next();
 };
 
 const validateBrand = [
@@ -34,8 +34,8 @@ const validateProduct = [
 const validateSale = [
   body('customerId').optional().isInt(),
   body('products').isArray().notEmpty().withMessage('Productos requeridos'),
-  body('products.*.productId').isInt(),
-  body('products.*.quantity').isInt({ min: 1 }),
+  body('products.*.productId').isMongoId().withMessage('ID de producto inválido'),
+  body('products.*.quantity').isInt({ min: 1 }).withMessage('Cantidad debe ser mayor a 0'),
   handleValidationErrors
 ];
 
