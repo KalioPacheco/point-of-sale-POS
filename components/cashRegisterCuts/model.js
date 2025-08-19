@@ -41,7 +41,6 @@ const cashRegisterCutSchema = new Schema({
   disable: { type: Boolean, default: false }
 }, { timestamps: true });
 
-
 cashRegisterCutSchema.statics.generateCutNumber = async function generateCutNumber(cashRegister) {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
@@ -61,15 +60,31 @@ cashRegisterCutSchema.statics.generateCutNumber = async function generateCutNumb
   return `${prefix}-${sequence.toString().padStart(3, '0')}`;
 };
 
-
+// FUNCIÓN CORREGIDA: Ahora filtra por cashRegister Y company
 cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes() {
   const Sale = require('../sales/model'); // eslint-disable-line global-require
   
-  const sales = await Sale.find({
-    company: this.company,
+  // FILTRO CORREGIDO: Incluir cashRegister y hacer filtros más específicos
+  const query = {
     createdAt: { $gte: this.shiftStart, $lte: this.shiftEnd },
     disable: false
-  });
+  };
+  
+  // Agregar filtro por cashRegister si existe
+  if (this.cashRegister) {
+    query.cashRegister = this.cashRegister;
+  }
+  
+  
+  if (this.company) {
+    query.company = this.company;
+  }
+  
+  console.log('DEBUG - Buscando ventas con filtro:', query);
+  
+  const sales = await Sale.find(query);
+  
+  console.log(`DEBUG - Encontradas ${sales.length} ventas para el corte`);
   
   let subtotal = 0;
   let taxes = 0;
@@ -79,14 +94,21 @@ cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes() {
     const isRefund = sale.refund || false;
     const multiplier = isRefund ? -1 : 1;
     
+    console.log(`DEBUG - Venta ${sale.id}: $${sale.total} (refund: ${isRefund})`);
+    
     subtotal += (sale.subtotal || 0) * multiplier;
     taxes += (sale.totalTaxes || 0) * multiplier;
     total += (sale.total || 0) * multiplier;
   });
   
+  console.log(`DEBUG - Totales calculados: Subtotal: $${subtotal}, Taxes: $${taxes}, Total: $${total}`);
+  
   this.salesSummary.subtotalAmount = subtotal;
   this.salesSummary.taxesAmount = taxes;
   this.salesSummary.netSales = total;
+  this.salesSummary.salesCount = sales.filter(s => !s.refund).length;
+  this.salesSummary.refundsCount = sales.filter(s => s.refund).length;
+  this.salesSummary.salesIds = sales.map(s => s.id);
   
   return { subtotal, taxes, total };
 };
@@ -102,7 +124,6 @@ cashRegisterCutSchema.methods.getFormatWithTaxes = function getFormatWithTaxes()
   lines.push(`Período: ${new Date(this.shiftStart).toLocaleTimeString()} - ${new Date(this.shiftEnd).toLocaleTimeString()}`);
   lines.push('---------------------------------');
   
- 
   lines.push('RESUMEN DE VENTAS:');
   lines.push(`Ventas: ${' '.repeat(20)} ${this.salesSummary.salesCount}`);
   lines.push(`Subtotal: ${' '.repeat(15)} $${this.salesSummary.subtotalAmount.toFixed(2)}`);

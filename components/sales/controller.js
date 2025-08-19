@@ -1,6 +1,5 @@
 const store = require('./store');
 
-
 function listSales(sellId, companyId) {
   return store.list(sellId, companyId);
 }
@@ -19,6 +18,87 @@ function removeSell(sellId) {
     return Promise.reject(new Error('companyId is undefined'));
   }
   return store.remove(sellId);
+}
+
+
+async function createProductSnapshots(products) {
+  if (!products || !Array.isArray(products)) {
+    return Promise.reject(new Error('Products array is required'));
+  }
+
+  try {
+    const Product = require('../products/model'); // eslint-disable-line global-require
+    
+    const snapshotsPromises = products.map(async (item) => {
+      const product = await Product.findById(item.productId)
+        .populate('brand', 'name')
+        .populate('categories', 'name');
+      
+      if (!product) {
+        throw new Error(`Product with ID ${item.productId} not found`);
+      }
+      
+      const quantity = item.quantity || 1;
+      const price = item.price || product.price || 0;
+      const subtotal = price * quantity;
+      const taxAmount = product.taxExempt ? 0 : (subtotal * (product.taxRate || 0)) / 100;
+      const total = subtotal + taxAmount;
+      
+      return {
+        productId: product.id,
+        quantity,
+        priceSnapshot: {
+          name: product.name,
+          price,
+          cost: product.cost || 0,
+          taxRate: product.taxRate || 0,
+          taxExempt: product.taxExempt || false,
+          snapshotDate: new Date(),
+          brand: product.brand?.name || '',
+          category: product.categories?.[0]?.name || '',
+          sku: product.sku || '',
+          description: product.description || ''
+        },
+        subtotal,
+        taxAmount,
+        total
+      };
+    });
+    
+    return await Promise.all(snapshotsPromises);
+    
+  } catch (error) {
+    return Promise.reject(new Error(`Error creating product snapshots: ${error.message}`));
+  }
+}
+
+// FUNCIÓN ACTUALIZADA: Calcular impuestos usando snapshots
+async function calculateSaleTaxesWithSnapshots(products) {
+  if (!products || !Array.isArray(products)) {
+    return Promise.reject(new Error('Products array is required'));
+  }
+
+  try {
+    const productSnapshots = await createProductSnapshots(products);
+    
+    let subtotal = 0;
+    let totalTaxes = 0;
+    
+    productSnapshots.forEach(item => {
+      subtotal += item.subtotal;
+      totalTaxes += item.taxAmount;
+    });
+    
+    return {
+      subtotal,
+      totalTaxes,
+      total: subtotal + totalTaxes,
+      productSnapshots
+    };
+    
+  } catch (error) {
+    return Promise.reject(new Error(`Error calculating taxes with snapshots: ${error.message}`));
+  }
 }
 
 async function calculateSaleTaxes(products, _companyId) {
@@ -65,11 +145,9 @@ async function calculateSaleTaxes(products, _companyId) {
   }
 }
 
-
 async function processSaleWithCoupon(saleData) {
   try {
-
-    const taxCalculation = await calculateSaleTaxes(saleData.products, saleData.companyId);
+    const taxCalculation = await calculateSaleTaxesWithSnapshots(saleData.products);
     
     let couponResult = null;
     if (saleData.couponCode) {
@@ -96,6 +174,7 @@ async function processSaleWithCoupon(saleData) {
     
     const finalSaleData = {
       ...saleData,
+      products: taxCalculation.productSnapshots,
       subtotal: taxCalculation.subtotal,
       totalTaxes: taxCalculation.totalTaxes,
       total: taxCalculation.total,
@@ -114,8 +193,7 @@ async function processSaleWithCoupon(saleData) {
 
 async function validateCouponForSale(couponCode, companyId, products, customerId = null) {
   try {
-   
-    const taxCalculation = await calculateSaleTaxes(products, companyId);
+    const taxCalculation = await calculateSaleTaxesWithSnapshots(products);
     
     const saleForValidation = {
       subtotal: taxCalculation.subtotal,
@@ -137,14 +215,13 @@ async function validateCouponForSale(couponCode, companyId, products, customerId
   }
 }
 
-
 async function addSell(sell) {
   if (!sell) {
     return Promise.reject(new Error(`Sell data is empty. User: ${JSON.stringify(sell)}`));
   }
 
   try {
-
+    // Procesar venta con snapshots históricos
     const processedSale = await processSaleWithCoupon(sell);
     return store.add(processedSale);
     
@@ -153,12 +230,36 @@ async function addSell(sell) {
   }
 }
 
+// NUEVA FUNCIÓN: Obtener datos históricos de una venta
+async function getSaleHistoricalData(saleId) {
+  try {
+    const sale = await store.getSaleById(saleId);
+    if (!sale) {
+      throw new Error('Sale not found');
+    }
+    
+    return {
+      saleId: sale.id,
+      date: sale.createdAt,
+      total: sale.total,
+      hasHistoricalData: sale.hasHistoricalData(),
+      products: sale.getProductsWithHistoricalData()
+    };
+    
+  } catch (error) {
+    return Promise.reject(new Error(`Error getting sale historical data: ${error.message}`));
+  }
+}
+
 module.exports = {
   addSell,
   listSales,
   updateSell,
   removeSell,
-  calculateSaleTaxes,
+  calculateSaleTaxes, 
+  calculateSaleTaxesWithSnapshots, 
   processSaleWithCoupon,
-  validateCouponForSale
+  validateCouponForSale,
+  createProductSnapshots, 
+  getSaleHistoricalData ,
 };
