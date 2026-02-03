@@ -74,13 +74,12 @@ mySchema.pre('save', function (next) {
   }
 });
 
-mySchema.methods.checkPassword = function (password, pwdHash, cb) {
-  bcrypt.compare(password, pwdHash, (err, isSame) => {
+mySchema.methods.checkPassword = function (password, cb) {
+  bcrypt.compare(password, this.password, (err, isSame) => {
     if (err) {
-      cb(err);
-    } else {
-      cb(null, isSame);
+      return cb(err);
     }
+    cb(null, isSame);
   });
 };
 

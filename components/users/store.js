@@ -1,33 +1,6 @@
 const passport = require('passport');
 const Model = require('./model');
 
-function login(req, res, next) {
-  return new Promise((resolve, reject) => {
-    passport.authenticate('local', (err, user) => {
-      if (err) {
-        next(err);
-        reject(err);
-      }
-      if (!user) {
-        next(err);
-        reject(err);
-      }
-      req.logIn(user, error => {
-        if (error) {
-          next(err);
-          reject(err);
-        }
-        resolve('Login éxitoso');
-      });
-    })(req, res, next);
-  });
-}
-
-function logout(req) {
-  req.logout();
-  return Promise.resolve('Logout exitoso');
-}
-
 function addUser(user) {
   const newUser = new Model(user);
   return new Promise((resolve, reject) => {
@@ -117,6 +90,4 @@ module.exports = {
   list: listUsers,
   update: updateUser,
   remove: removeUser,
-  login,
-  logout,
 };
