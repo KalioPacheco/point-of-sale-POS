@@ -20,17 +20,6 @@ const addUser = function (req, res) {
     });
 };
 
-const login = function (req, res, next) {
-  controller
-    .login(req, res, next)
-    .then(data => {
-      response.success(req, res, data, 201);
-    })
-    .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
-    });
-};
-
 const logout = function (req, res) {
   controller
     .logout(req)
@@ -85,7 +74,8 @@ const removeUser = function (req, res) {
 router.get('/', passportConfig.isAuth, listUsers);
 router.get('/:userId', passportConfig.isAuth, listUsers);
 router.post('/', addUser);
-router.post('/login', login);
+router.post('/login', controller.login);
+router.post('/register', controller.register);
 router.post('/logout', passportConfig.isAuth, logout);
 router.patch('/:userId', passportConfig.isAuth, updateUser);
 router.delete('/:userId', passportConfig.isAuth, removeUser);
