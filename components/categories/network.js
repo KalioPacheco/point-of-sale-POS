@@ -3,6 +3,10 @@ const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const {
+  authenticateToken,
+  requireRole
+} = require('../../middleware/auth');
 const { validateCategory } = require('../../middleware/validation'); 
 
 const router = express.Router();
@@ -61,11 +65,11 @@ const removeCategory = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, listCategories);
-router.get('/:categoryId', passportConfig.isAuth, listCategories);
-router.post('/', passportConfig.isAuth, validateCategory, addCategory);          
-router.patch('/:categoryId', passportConfig.isAuth, validateCategory, updateCategory);
-router.delete('/:categoryId', passportConfig.isAuth, removeCategory);
+router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), listCategories);
+router.get('/:categoryId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), listCategories);
+router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateCategory, addCategory);          
+router.patch('/:categoryId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateCategory, updateCategory);
+router.delete('/:categoryId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), removeCategory);
 
 
 module.exports = router;

@@ -30,7 +30,8 @@ function login(req, res, next) {
         userId: user._id,
         userName: user.userName,
         typeUser: user.typeUser,  
-        company: user.company  
+        company: user.company,
+        role: user.role  
       };
       
       const token = jwt.sign(
@@ -50,7 +51,8 @@ function login(req, res, next) {
           lastNames: user.lastNames,
           typeUser: user.typeUser,
           company: user.company,
-          photo: user.photo
+          photo: user.photo,
+          role: user.role
         }
       });
       
@@ -66,7 +68,7 @@ function login(req, res, next) {
 }
 
 function register(req, res, next) {
-  const { userName, password, name, lastNames } = req.body;
+  const { userName, password, name, lastNames, role } = req.body;
 
  
   const newUser = new Users({
@@ -74,6 +76,7 @@ function register(req, res, next) {
     password, 
     name,
     lastNames,
+    role
   });
 
   newUser.save()
@@ -82,7 +85,8 @@ function register(req, res, next) {
         userId: createdUser._id,
         userName: createdUser.userName,
         typeUser: createdUser.typeUser,
-        company: createdUser.company
+        company: createdUser.company,
+        role: createdUser.role
       };
       
       const token = jwt.sign(
@@ -101,7 +105,8 @@ function register(req, res, next) {
           name: createdUser.name,
           lastNames: createdUser.lastNames,
           typeUser: createdUser.typeUser,
-          company: createdUser.company
+          company: createdUser.company,
+          role: createdUser.role
         }
       });
     })
