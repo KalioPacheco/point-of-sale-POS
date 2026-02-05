@@ -2,6 +2,10 @@ const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
+const {
+  authenticateToken,
+  requireRole
+} = require('../../middleware/auth');
 const { validateCompany } = require('../../middleware/validation');
 
 const router = express.Router();
@@ -55,11 +59,11 @@ const removeCompany = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, listCompanies);
-router.get('/:companyId', passportConfig.isAuth, listCompanies);
-router.post('/', passportConfig.isAuth, validateCompany, addCompany);
-router.patch('/:companyId', passportConfig.isAuth, validateCompany, updateCompany);
-router.delete('/:companyId', passportConfig.isAuth, removeCompany);
+router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin']), listCompanies);
+router.get('/:companyId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), listCompanies);
+router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin']), validateCompany, addCompany);
+router.patch('/:companyId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), validateCompany, updateCompany);
+router.delete('/:companyId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), removeCompany);
 
 
 module.exports = router;
