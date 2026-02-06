@@ -4,6 +4,10 @@ const controller = require('./controller');
 const store = require('./store');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const {
+  authenticateToken,
+  requireRole
+} = require('../../middleware/auth');
 const { validateTicket } = require('../../middleware/validation');
 
 const router = express.Router();

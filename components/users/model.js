@@ -50,6 +50,11 @@ const mySchema = new Schema(
         default: true,
       },
     },
+    role: {
+      type: String,
+      default: 'vendedor',
+      enum: ['vendedor', 'admin', 'manager'] // Valores permitidos
+    }
   },
   { timestamps: true },
 );
