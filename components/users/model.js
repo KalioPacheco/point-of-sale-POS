@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 const { Schema } = mongoose;
 
@@ -50,6 +50,11 @@ const mySchema = new Schema(
         default: true,
       },
     },
+    role: {
+      type: String,
+      default: 'vendedor',
+      enum: ['vendedor', 'admin', 'manager'] // Valores permitidos
+    }
   },
   { timestamps: true },
 );
@@ -74,13 +79,12 @@ mySchema.pre('save', function (next) {
   }
 });
 
-mySchema.methods.checkPassword = function (password, pwdHash, cb) {
-  bcrypt.compare(password, pwdHash, (err, isSame) => {
+mySchema.methods.checkPassword = function (password, cb) {
+  bcrypt.compare(password, this.password, (err, isSame) => {
     if (err) {
-      cb(err);
-    } else {
-      cb(null, isSame);
+      return cb(err);
     }
+    cb(null, isSame);
   });
 };
 

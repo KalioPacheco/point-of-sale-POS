@@ -3,11 +3,15 @@
 const express = require('express');
 const controller = require('./controller');
 const response = require('../../network');
+const {
+  authenticateToken,
+  requireRole
+} = require('../../middleware/auth');
 const { validateCoupon } = require('../../middleware/validation');
 
 const router = express.Router();
 
-router.post('/', validateCoupon, async (req, res) => { 
+router.post('/', validateCoupon, authenticateToken, requireRole(['admin', 'manager']), async (req, res) => { 
   try {
     const couponData = {
       ...req.body,
@@ -23,7 +27,7 @@ router.post('/', validateCoupon, async (req, res) => {
 });
 
 
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { company, status, discountType, active, expired, code, name, limit } = req.query;
     const companyId = company || req.user?.company;
@@ -55,7 +59,7 @@ router.get('/', async (req, res) => {
 });
 
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { id } = req.params;
     const coupon = await controller.listCoupons(id);
@@ -71,7 +75,7 @@ router.get('/:id', async (req, res) => {
 });
 
 
-router.put('/:id', validateCoupon, async (req, res) => { 
+router.put('/:id', validateCoupon, authenticateToken, requireRole(['admin', 'manager']), async (req, res) => { 
   try {
     const { id } = req.params;
     const updatedCoupon = await controller.updateCoupon(id, req.body);
@@ -81,7 +85,7 @@ router.put('/:id', validateCoupon, async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { id } = req.params;
     const result = await controller.removeCoupon(id);
@@ -92,7 +96,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 
-router.post('/validate', async (req, res) => {
+router.post('/validate', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { 
       code, 
@@ -123,7 +127,7 @@ router.post('/validate', async (req, res) => {
   }
 });
 
-router.post('/apply', async (req, res) => {
+router.post('/apply', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const {
       code,
@@ -155,7 +159,7 @@ router.post('/apply', async (req, res) => {
 });
 
 
-router.get('/active/list', async (req, res) => {
+router.get('/active/list', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { company } = req.query;
     const companyId = company || req.user?.company;
@@ -171,7 +175,7 @@ router.get('/active/list', async (req, res) => {
   }
 });
 
-router.get('/cashier/list', async (req, res) => {
+router.get('/cashier/list', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { company } = req.query;
     const companyId = company || req.user?.company;
@@ -188,7 +192,7 @@ router.get('/cashier/list', async (req, res) => {
 });
 
 
-router.get('/search/:term', async (req, res) => {
+router.get('/search/:term', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { term } = req.params;
     const { company } = req.query;
@@ -210,7 +214,7 @@ router.get('/search/:term', async (req, res) => {
 });
 
 
-router.post('/generate-code', async (req, res) => {
+router.post('/generate-code', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { prefix } = req.body;
     const code = controller.generateCouponCode(prefix);
@@ -221,7 +225,7 @@ router.post('/generate-code', async (req, res) => {
 });
 
 
-router.get('/check-code/:code', async (req, res) => {
+router.get('/check-code/:code', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { code } = req.params;
     const { company } = req.query;
@@ -242,7 +246,7 @@ router.get('/check-code/:code', async (req, res) => {
   }
 });
 
-router.get('/stats/:id', async (req, res) => {
+router.get('/stats/:id', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { id } = req.params;
     const stats = await controller.getCouponStats(id);
@@ -253,7 +257,7 @@ router.get('/stats/:id', async (req, res) => {
 });
 
 
-router.get('/report/:companyId', async (req, res) => {
+router.get('/report/:companyId', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { companyId } = req.params;
     const { startDate, endDate } = req.query;
@@ -265,7 +269,7 @@ router.get('/report/:companyId', async (req, res) => {
   }
 });
 
-router.get('/customer/history', async (req, res) => {
+router.get('/customer/history', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { customerId, company } = req.query;
     const companyId = company || req.user?.company;
@@ -282,7 +286,7 @@ router.get('/customer/history', async (req, res) => {
 });
 
 
-router.post('/maintenance/expire', async (req, res) => {
+router.post('/maintenance/expire', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const result = await controller.expireCoupons();
     return response.success(req, res, result, 200);
@@ -292,7 +296,7 @@ router.post('/maintenance/expire', async (req, res) => {
 });
 
 
-router.post('/calculate-sale', async (req, res) => {
+router.post('/calculate-sale', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const {
       saleData,
