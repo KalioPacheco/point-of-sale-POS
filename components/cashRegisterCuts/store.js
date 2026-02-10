@@ -158,7 +158,7 @@ async function generateCutPDFDirect(cutId, res) {
 
   doc.moveDown(2);
   doc.text('______________________     ______________________');
-  doc.text('  Firma del Cajero            Firma del Gerente ');
+  doc.text('  Firma del Cajero            Firma del manager ');
   doc.moveDown();
   doc.fontSize(8).text(`Generado: ${new Date().toLocaleString('es-MX')}`);
 

@@ -1,5 +1,9 @@
 const express = require('express');
 const controller = require('./controller');
+const {
+  authenticateToken,
+  requireRole
+} = require('../../middleware/auth');
 const { validateTax } = require('../../middleware/validation');
 
 
@@ -22,7 +26,7 @@ const sendResponse = {
   }
 };
 
-router.post('/config', validateTax, async (req, res) => { 
+router.post('/config', validateTax, authenticateToken, requireRole(['admin']), async (req, res) => { 
   try {
     const taxData = {
       ...req.body,
@@ -36,7 +40,7 @@ router.post('/config', validateTax, async (req, res) => {
   }
 });
 
-router.get('/config/:companyId', async (req, res) => {
+router.get('/config/:companyId', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { companyId } = req.params;
     const result = await controller.listTaxConfigs(companyId);
@@ -46,7 +50,7 @@ router.get('/config/:companyId', async (req, res) => {
   }
 });
 
-router.get('/config/detail/:taxConfigId', async (req, res) => {
+router.get('/config/detail/:taxConfigId', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { taxConfigId } = req.params;
     const result = await controller.getTaxConfig(taxConfigId);
@@ -56,7 +60,7 @@ router.get('/config/detail/:taxConfigId', async (req, res) => {
   }
 });
 
-router.put('/config/:taxConfigId', validateTax, async (req, res) => {
+router.put('/config/:taxConfigId', validateTax, authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { taxConfigId } = req.params;
     const result = await controller.updateTaxConfig(taxConfigId, req.body);
@@ -66,7 +70,7 @@ router.put('/config/:taxConfigId', validateTax, async (req, res) => {
   }
 });
 
-router.delete('/config/:taxConfigId', async (req, res) => {
+router.delete('/config/:taxConfigId', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { taxConfigId } = req.params;
     const result = await controller.removeTaxConfig(taxConfigId);
@@ -77,7 +81,7 @@ router.delete('/config/:taxConfigId', async (req, res) => {
 });
 
 
-router.post('/product', async (req, res) => {
+router.post('/product', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { productId, taxConfigId, customRate, companyId } = req.body;
     const userId = req.user?.id;
@@ -89,7 +93,7 @@ router.post('/product', async (req, res) => {
   }
 });
 
-router.post('/product/bulk', async (req, res) => {
+router.post('/product/bulk', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { productIds, taxConfigId, customRate, companyId } = req.body;
     const userId = req.user?.id;
@@ -101,7 +105,7 @@ router.post('/product/bulk', async (req, res) => {
   }
 });
 
-router.get('/product/:productId/:companyId', async (req, res) => {
+router.get('/product/:productId/:companyId', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { productId, companyId } = req.params;
     const result = await controller.getProductTaxes(productId, companyId);
@@ -111,7 +115,7 @@ router.get('/product/:productId/:companyId', async (req, res) => {
   }
 });
 
-router.get('/product/detail/:productId/:companyId', async (req, res) => {
+router.get('/product/detail/:productId/:companyId', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { productId, companyId } = req.params;
     const result = await controller.getProductWithTaxes(productId, companyId);
@@ -121,7 +125,7 @@ router.get('/product/detail/:productId/:companyId', async (req, res) => {
   }
 });
 
-router.delete('/product/:productId/:taxConfigId/:companyId', async (req, res) => {
+router.delete('/product/:productId/:taxConfigId/:companyId', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { productId, taxConfigId, companyId } = req.params;
     const result = await controller.removeProductTax(productId, taxConfigId, companyId);
@@ -132,7 +136,7 @@ router.delete('/product/:productId/:taxConfigId/:companyId', async (req, res) =>
 });
 
 
-router.post('/calculate/product', async (req, res) => {
+router.post('/calculate/product', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { productId, basePrice, companyId } = req.body;
     const result = await controller.calculateProductTaxes(productId, basePrice, companyId);
@@ -142,7 +146,7 @@ router.post('/calculate/product', async (req, res) => {
   }
 });
 
-router.post('/calculate/sale', async (req, res) => {
+router.post('/calculate/sale', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { products, companyId } = req.body;
     const result = await controller.calculateSaleTaxes(products, companyId);
@@ -152,7 +156,7 @@ router.post('/calculate/sale', async (req, res) => {
   }
 });
 
-router.get('/test', (req, res) => {
+router.get('/test', authenticateToken, requireRole(['admin']), async (req, res) => {
   sendResponse.success(req, res, {
     message: 'Tax system is working correctly',
     timestamp: new Date(),

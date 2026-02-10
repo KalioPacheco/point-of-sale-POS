@@ -39,12 +39,9 @@ const requireRole = (roles) => (req, res, next) => {
     });
   }
 
-  const userRole = req.user.role || req.user.userType;
-  
-  if (!roles.includes(userRole)) {
-    return res.status(403).json({ 
-      error: 'Permisos insuficientes',
-      message: `Requiere uno de estos roles: ${roles.join(', ')}`
+  if (!roles.includes(req.user.role)) {
+    return res.status(403).json({
+      error: 'Acceso denegado por rol insuficiente'
     });
   }
 
@@ -53,7 +50,7 @@ const requireRole = (roles) => (req, res, next) => {
 
 const requireAdmin = requireRole(['admin', 'administrador']);
 
-const requireManager = requireRole(['admin', 'administrador', 'manager', 'gerente']);
+const requireManager = requireRole(['admin', 'administrador', 'manager']);
 
 const optionalAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;

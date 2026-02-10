@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 const { Schema } = mongoose;
 
@@ -50,6 +50,11 @@ const mySchema = new Schema(
         default: true,
       },
     },
+    role: {
+      type: String,
+      default: 'vendedor',
+      enum: ['vendedor', 'admin', 'manager'] // Valores permitidos
+    }
   },
   { timestamps: true },
 );

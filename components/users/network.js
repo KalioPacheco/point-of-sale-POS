@@ -3,7 +3,10 @@ const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
-
+const {
+  authenticateToken,
+  requireRole
+} = require('../../middleware/auth');
 const router = express.Router();
 
 const addUser = function (req, res) {
@@ -75,9 +78,9 @@ router.get('/', passportConfig.isAuth, listUsers);
 router.get('/:userId', passportConfig.isAuth, listUsers);
 router.post('/', addUser);
 router.post('/login', controller.login);
-router.post('/register', controller.register);
+router.post('/register', controller.register, authenticateToken, requireRole(['admin']));
 router.post('/logout', passportConfig.isAuth, logout);
-router.patch('/:userId', passportConfig.isAuth, updateUser);
-router.delete('/:userId', passportConfig.isAuth, removeUser);
+router.patch('/:userId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), updateUser);
+router.delete('/:userId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), removeUser);
 
 module.exports = router;

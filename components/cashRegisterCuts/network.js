@@ -4,6 +4,10 @@ const controller = require('./controller');
 const store = require('./store');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const {
+  authenticateToken,
+  requireRole
+} = require('../../middleware/auth');
 const { validateCashRegisterCut } = require('../../middleware/validation');
 
 const router = express.Router();
@@ -14,7 +18,7 @@ const handleRequest = (req, res, promise) => {
     .catch(err => response.error(req, res, err.message, 500, err));
 };
 
-router.post('/create', passportConfig.isAuth, validateCashRegisterCut, (req, res) => {
+router.post('/create', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateCashRegisterCut, (req, res) => {
   const cutData = { 
     ...req.body, 
     administratorId: Helper.getUserId(req),
@@ -23,16 +27,16 @@ router.post('/create', passportConfig.isAuth, validateCashRegisterCut, (req, res
   handleRequest(req, res, controller.createCashRegisterCut(cutData));
 });
 
-router.get('/reports/general', passportConfig.isAuth, (req, res) => {
+router.get('/reports/general', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   const filters = { ...req.query, companyId: Helper.getCompanyId(req) };
   handleRequest(req, res, controller.generateCashRegisterReport(filters));
 });
 
-router.get('/reports/daily/:date', passportConfig.isAuth, (req, res) => {
+router.get('/reports/daily/:date', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   handleRequest(req, res, controller.getDailyCashRegisterReport(req.params.date, Helper.getCompanyId(req)));
 });
 
-router.get('/reports/user/:userId', passportConfig.isAuth, (req, res) => {
+router.get('/reports/user/:userId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) {
     return response.error(req, res, 'Start date and end date required', 400);
@@ -42,7 +46,7 @@ router.get('/reports/user/:userId', passportConfig.isAuth, (req, res) => {
   ));
 });
 
-router.get('/reports/cashregister/:cashRegister', passportConfig.isAuth, (req, res) => {
+router.get('/reports/cashregister/:cashRegister', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) {
     return response.error(req, res, 'Start date and end date required', 400);
@@ -51,19 +55,19 @@ router.get('/reports/cashregister/:cashRegister', passportConfig.isAuth, (req, r
     req.params.cashRegister, startDate, endDate, Helper.getCompanyId(req)
   ));
 });
-router.get('/', passportConfig.isAuth, (req, res) => {
+router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   const filters = { ...req.query, companyId: Helper.getCompanyId(req) };
   handleRequest(req, res, controller.getCashRegisterCuts(filters));
 });
 
 
-router.get('/:cutId/pdf', passportConfig.isAuth, (req, res) => {
+router.get('/:cutId/pdf', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   store.generateCutPDFDirect(req.params.cutId, res)
     .catch(err => response.error(req, res, err.message, 500, err));
 });
 
 
-router.get('/:cutId', passportConfig.isAuth, (req, res) => {
+router.get('/:cutId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   handleRequest(req, res, controller.getCashRegisterCutById(req.params.cutId));
 });
 
