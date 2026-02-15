@@ -11,8 +11,8 @@ function addProduct(product) {
   return store.add(product);
 }
 
-function listProducts(userId, companyId) {
-  return store.list(userId, companyId);
+function listProducts(userId, companyId, filters = {}) {
+  return store.list(userId, companyId, filters);
 }
 
 function updateProduct(productId, product) {
