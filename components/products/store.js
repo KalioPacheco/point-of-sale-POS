@@ -6,7 +6,9 @@ function addProduct(product) {
   return newProduct.save();
 }
 
-async function listProducts(productId, companyId) {
+const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function listProducts(productId, companyId, filters = {}) {
   const filter = {};
   
   if (productId) {
@@ -19,7 +21,32 @@ async function listProducts(productId, companyId) {
     }
   }
   
-  filter.disable = false;
+  if (typeof filters.disable === 'boolean') {
+    filter.disable = filters.disable;
+  } else {
+    filter.disable = false;
+  }
+
+  if (filters.category && mongoose.Types.ObjectId.isValid(filters.category)) {
+    filter.categories = filters.category;
+  }
+
+  if (filters.q && typeof filters.q === 'string' && filters.q.trim()) {
+    const searchValue = filters.q.trim();
+    const searchRegex = new RegExp(escapeRegex(searchValue), 'i');
+
+    const queryOr = [
+      { name: searchRegex },
+      { code: searchRegex },
+      { codigo: searchRegex },
+    ];
+
+    if (!Number.isNaN(Number(searchValue))) {
+      queryOr.push({ folio: Number(searchValue) });
+    }
+
+    filter.$or = queryOr;
+  }
 
   const products = await Model.find(filter)
     .populate('brand')
