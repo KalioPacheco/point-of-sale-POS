@@ -364,7 +364,7 @@ const getProductsByCategories = function getProductsByCategories(req, res) {
 };
 
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), listProducts);
+router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['vendedor', 'admin', 'manager']), listProducts);
 router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, addProduct); 
 router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, updateProduct);
 router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), updateProduct);
