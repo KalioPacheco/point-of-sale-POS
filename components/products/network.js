@@ -39,8 +39,16 @@ const addProduct = function addProduct(req, res) {
 const listProducts = function listProducts(req, res) {
   const { productId } = req.params;
   const companyId = Helper.getCompanyId(req);
+  const { q, category, disable } = req.query;
+
+  const filters = {
+    q: typeof q === 'string' ? q : undefined,
+    category: typeof category === 'string' ? category : undefined,
+    disable: disable === 'true' ? true : disable === 'false' ? false : undefined,
+  };
+
   controller
-    .listProducts(productId, companyId)
+    .listProducts(productId, companyId, filters)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -356,7 +364,7 @@ const getProductsByCategories = function getProductsByCategories(req, res) {
 };
 
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), listProducts);
+router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['vendedor', 'admin', 'manager']), listProducts);
 router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, addProduct); 
 router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, updateProduct);
 router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), updateProduct);
