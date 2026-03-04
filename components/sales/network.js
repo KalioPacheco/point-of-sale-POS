@@ -14,11 +14,21 @@ const router = express.Router();
 const addSell = function addSell(req, res) {
   const sell = req.body;
   const companyId = Helper.getCompanyId(req);
+  const idempotencyKey = req.headers['idempotency-key'];
+
   sell.companyId = companyId;
+
+  if (!idempotencyKey) {
+    return response.error(req, res, 'Idempotency-Key header required', 400);
+  }
+
   controller
-    .addSell(sell)
+    .addSell(sell, idempotencyKey)
     .then(data => {
-      response.success(req, res, data, 201);
+      response.success(req, res, {
+        saleId: data.id,
+        message: 'Venta creada correctamente'
+      }, 201);
     })
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);
@@ -91,12 +101,21 @@ const validateCoupon = function validateCoupon(req, res) {
 const addSellWithCoupon = function addSellWithCoupon(req, res) {
   const sell = req.body;
   const companyId = Helper.getCompanyId(req);
+  const idempotencyKey = req.headers['idempotency-key'];
+
   sell.companyId = companyId;
-  
+
+  if (!idempotencyKey) {
+    return response.error(req, res, 'Idempotency-Key header required', 400);
+  }
+
   controller
-    .addSell(sell) 
+    .addSell(sell, idempotencyKey)
     .then(data => {
-      response.success(req, res, data, 201);
+      response.success(req, res, {
+        saleId: data.id,
+        message: 'Venta creada correctamente'
+      }, 201);
     })
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);

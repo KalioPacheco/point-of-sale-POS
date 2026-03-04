@@ -215,19 +215,36 @@ async function validateCouponForSale(couponCode, companyId, products, customerId
   }
 }
 
-async function addSell(sell) {
+async function addSell(sell, idempotencyKey) {
   if (!sell) {
-    return Promise.reject(new Error(`Sell data is empty. User: ${JSON.stringify(sell)}`));
+    return Promise.reject(new Error('Sell data is empty'));
+  }
+
+  if (!idempotencyKey) {
+    return Promise.reject(new Error('Idempotency key is required'));
   }
 
   try {
-    // Procesar venta con snapshots históricos
+    const existingSale = await store.findByIdempotencyKey(idempotencyKey);
+
+    if (existingSale) {
+      return existingSale; 
+    }
     const processedSale = await processSaleWithCoupon(sell);
-    return store.add(processedSale);
-    
+
+    const saleWithKey = {
+      ...processedSale,
+      idempotencyKey
+    };
+
+    const newSale = await store.add(saleWithKey);
+
+    return newSale;
+
   } catch (error) {
     return Promise.reject(new Error(`Error adding sale: ${error.message}`));
   }
+  
 }
 
 // NUEVA FUNCIÓN: Obtener datos históricos de una venta
