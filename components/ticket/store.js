@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const mongoose = require('mongoose');
 const Model = require('./model');
 const SalesModel = require('../sales/model');
 const CashRegisterCutsModel = require('../cashRegisterCuts/model');
@@ -11,6 +12,26 @@ let storeConfig = {
   phone: '',
   taxId: '',
   email: ''
+};
+
+const normalizeObjectId = (value) => {
+  if (!value) return undefined;
+  const asString = typeof value === 'string' ? value : value.toString?.();
+  if (!asString || asString === 'default-company-id') return undefined;
+  return mongoose.Types.ObjectId.isValid(asString) ? asString : undefined;
+};
+
+const normalizeTaxBreakdown = (value) => {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter(item => item && typeof item === 'object')
+    .map(item => ({
+      taxId: normalizeObjectId(item.taxId),
+      name: item.name || 'Impuesto',
+      type: item.type || 'percentage',
+      totalAmount: Number(item.totalAmount) || 0
+    }));
 };
 
 const getCompany = async (companyId) => {
@@ -76,6 +97,22 @@ async function updateStoreInfo(storeInfo, companyId) {
 
 async function createTicket(ticketData) {
   try {
+    const companyId = normalizeObjectId(ticketData.companyId);
+    const normalizedItems = Array.isArray(ticketData.items)
+      ? ticketData.items.map(item => ({
+          ...item,
+          productId: normalizeObjectId(item.productId),
+          taxes: Array.isArray(item.taxes)
+            ? item.taxes.map(tax => ({
+                ...tax,
+                taxId: normalizeObjectId(tax.taxId),
+                amount: Number(tax.amount) || 0,
+                rate: Number(tax.rate) || 0
+              }))
+            : []
+        }))
+      : [];
+
     const ticketNumber = await Model.generateTicketNumber(
       ticketData.ticketType,
       ticketData.transactionInfo?.cashRegister || 'CAJA-1'
@@ -93,18 +130,19 @@ async function createTicket(ticketData) {
       cutId: ticketData.cutId,
       storeInfo,
       transactionInfo: ticketData.transactionInfo || {},
-      items: ticketData.items || [],
+      items: normalizedItems,
       totals: ticketData.totals || {},
       payment: ticketData.payment || {},
       format: ticketData.format || {},
       notes: ticketData.notes,
-      company: ticketData.companyId,
-      taxBreakdown: ticketData.taxBreakdown || [],
+      company: companyId,
+      taxBreakdown: normalizeTaxBreakdown(ticketData.taxBreakdown),
       coupon: ticketData.coupon || null,
       discount: ticketData.discount || null
     });
 
     newTicket.calculateTotals();
+    newTicket.taxBreakdown = normalizeTaxBreakdown(newTicket.taxBreakdown);
     const savedTicket = await newTicket.save();
     
     return {
@@ -130,24 +168,39 @@ async function createTicket(ticketData) {
 }
 
 const mapSaleToTicketData = (sale, storeInfo, companyId) => {
-  const items = sale.itemsPOS?.length > 0 
-    ? sale.itemsPOS.map(item => ({
-        productId: item.product?.id || item.product,
-        productName: item.productName || item.product?.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        subtotal: item.unitPrice * item.quantity,
-        totalPrice: item.totalPrice,
-        variant: item.variant,
-        taxes: item.taxes || [],
-        totalTaxes: item.totalTaxes || 0
-      }))
+  const items = sale.products?.length > 0
+    ? sale.products.map(item => {
+        const quantity = item.quantity || 1;
+        const unitPrice = item.priceSnapshot?.price || 0;
+        const subtotal = item.subtotal || (unitPrice * quantity);
+        const totalTaxes = item.taxAmount || 0;
+        const taxRate = item.priceSnapshot?.taxRate || 0;
+        const taxes = item.priceSnapshot?.taxExempt
+          ? []
+          : [{
+              name: 'IVA',
+              type: 'percentage',
+              rate: taxRate,
+              amount: totalTaxes
+            }];
+
+        return {
+          productId: normalizeObjectId(item.productId?.id || item.productId),
+          productName: item.priceSnapshot?.name || item.productId?.name || 'Producto',
+          quantity,
+          unitPrice,
+          subtotal,
+          totalPrice: item.total || (subtotal + totalTaxes),
+          taxes,
+          totalTaxes
+        };
+      })
     : [{
         productName: 'Venta',
         quantity: 1,
-        unitPrice: sale.total,
-        subtotal: sale.total,
-        totalPrice: sale.total,
+        unitPrice: sale.finalTotal || sale.total || 0,
+        subtotal: sale.subtotal || sale.total || 0,
+        totalPrice: sale.finalTotal || sale.total || 0,
         taxes: [],
         totalTaxes: 0
       }];
@@ -166,9 +219,9 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
     },
     items,
     totals: {
-      subtotal: sale.subtotal || sale.total,
+      subtotal: sale.subtotal || sale.total || 0,
       totalTaxes: sale.totalTaxes || 0,
-      total: sale.total,
+      total: sale.finalTotal || sale.total || 0,
       discounts: sale.discounts || 0,
       couponDiscount: sale.couponDiscount || 0,
       couponCode: sale.couponCode,
@@ -188,7 +241,7 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
 async function createTicketFromSaleWithTaxes(saleId, userId, companyId) {
   try {
     const sale = await SalesModel.findById(saleId)
-      .populate('itemsPOS.product', 'name')
+      .populate('products.productId', 'name')
       .populate('createdBy', 'userName name');
 
     if (!sale) throw new Error('Sale not found');
@@ -207,7 +260,7 @@ async function createTicketFromSaleWithTaxes(saleId, userId, companyId) {
 async function createTicketFromSale(saleId, userId, companyId) {
   try {
     const sale = await SalesModel.findById(saleId)
-      .populate('itemsPOS.product', 'name')
+      .populate('products.productId', 'name')
       .populate('createdBy', 'userName name');
 
     if (!sale) throw new Error('Sale not found');
@@ -561,6 +614,27 @@ async function generateTicketPDF(ticketId, format, res) {
   }
 }
 
+async function generateTicketPDFFromSale(saleId, format = '80mm', res, userId, companyId) {
+  try {
+    if (!saleId) throw new Error('Sale ID required');
+
+    const existingTicket = await Model.findOne({ saleId, disable: false }).sort({ createdAt: -1 });
+
+    let ticketId = existingTicket?.id;
+    if (!ticketId) {
+      const createdTicket = await createTicketFromSaleWithTaxes(saleId, userId, companyId);
+      ticketId = createdTicket?.ticket?.id;
+    }
+
+    if (!ticketId) throw new Error('Could not generate ticket for sale');
+
+    return generateTicketPDF(ticketId, format, res);
+  } catch (error) {
+    console.error('Error generating PDF from sale:', error);
+    throw error;
+  }
+}
+
 async function reprintTicket(ticketId, userId) {
   try {
     const ticket = await Model.findById(ticketId);
@@ -758,5 +832,6 @@ module.exports = {
   processRefundTicket,
   createTicketFromSaleWithTaxes,
   processSaleTicketWithTaxes,
-  getTicketsByDateRange
+  getTicketsByDateRange,
+  generateTicketPDFFromSale
 };
