@@ -3,7 +3,7 @@ const db = require('mongoose');
 db.Promise = global.Promise;
 
 async function connect() {
-  const url = process.env.DB_CONECTION_DEV;
+  const url = process.env.DB_CONECTION_DEV ;
   await db.connect(
     url,
     {

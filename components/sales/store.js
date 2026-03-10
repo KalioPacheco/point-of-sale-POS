@@ -39,6 +39,10 @@ async function getSaleById(saleId) {
   return sale;
 }
 
+function findByIdempotencyKey(key) {
+  return Model.findOne({ idempotencyKey: key });
+}
+
 
 async function listSalesForReports(filters = {}) {
   const query = { disable: false };
@@ -215,4 +219,5 @@ module.exports = {
   listSalesForReports, 
   getSalesSummaryWithHistoricalData, 
   migrateOldSalesToHistoricalFormat ,
+  findByIdempotencyKey
 };

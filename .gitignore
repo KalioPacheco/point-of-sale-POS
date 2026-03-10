@@ -6,6 +6,7 @@
 .firestore/
 .pnp.js
 .idea/
+pnpm-lock.yaml
 
 # testing
 /coverage
