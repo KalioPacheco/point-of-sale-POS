@@ -78,15 +78,19 @@ async function updateProduct(productId, product) {
     minSell = {},
     hasVariants = null,
     variants = null,
+    categories = null
   } = product;
 
+  if (categories) {
+    founProduct.categories = categories;
+  }
   if (name) {
     founProduct.name = name;
   }
   if (photo) {
     founProduct.photo = photo;
   }
-  if (price) {
+  if (price !== undefined) {
     founProduct.price = price;
   }
   if (brand) {

@@ -26,8 +26,16 @@ const validateCategory = [
 const validateProduct = [
   body('name').notEmpty().withMessage('Nombre requerido'),
   body('price').isFloat({ min: 0 }).withMessage('Precio inválido'),
-  body('categoryId').isInt().withMessage('Categoría inválida'),
-  body('brandId').optional().isInt(),
+  body('categories')
+    .isArray()
+    .withMessage('Las categorías deben ser un arreglo'),
+  body('categories.*')
+    .isMongoId()
+    .withMessage('Categoría inválida'),
+  body('brand')
+    .optional()
+    .isMongoId()
+    .withMessage('Marca inválida'),
   handleValidationErrors
 ];
 
