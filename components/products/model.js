@@ -46,6 +46,40 @@ const variantSchema = new Schema({
   updatedAt: Date
 });
 
+const stockHistorySchema = new mongoose.Schema({
+  product: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'Products',
+    required: true,
+  },
+  user: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'Users'
+  },
+  type: {
+    type: String,
+    enum: ['add', 'reduce', 'set'],
+    required: true,
+  },
+  quantity: {
+    type: Number,
+    required: true,
+  },
+  previousStock: {
+    type: Number,
+  },
+  newStock: {
+    type: Number,
+  },
+  reason: {
+    type: String,
+    default: 'Manual adjustment',
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
 
 const productSchema = new Schema({
   name: String,
@@ -113,6 +147,12 @@ const productSchema = new Schema({
   }
 });
 
+const StockHistory = mongoose.model(
+  'StockHistory',
+  stockHistorySchema,
+  'stock_history'
+);
+
 productSchema.methods.getTotalStock = function getTotalStock() {
   if (!this.hasVariants) {
     return this.stock || 0;
@@ -146,4 +186,7 @@ productSchema.methods.getTaxAmount = function getTaxAmount() {
 };
 
 const model = mongoose.model('Products', productSchema, 'products');
-module.exports = model;
+module.exports = {
+  Product: model,
+  StockHistory
+};

@@ -33,6 +33,11 @@ exports.getUserId = req => {
     const userId = req.user.id.toString().split('"')?.[0] || '';
     return userId;
   }
+
+  if (req.user.userId) {
+    const userId = req.user.userId.toString().split('"')?.[0] || '';
+    return userId;
+  }
   
   console.log('User has no _id or id field');
   return '';

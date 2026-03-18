@@ -33,20 +33,20 @@ function removeProduct(productId) {
   return store.remove(productId);
 }
 
-function addStock(productId, quantity, reason) {
+function addStock(productId, quantity, userId, reason) {
   if (!productId || !quantity || quantity <= 0) {
     return Promise.reject('productId and positive quantity are required');
   }
   
-  return store.addStock(productId, quantity, reason);
+  return store.addStock(productId, quantity, userId, reason);
 }
 
-function reduceStock(productId, quantity, reason) {
+function reduceStock(productId, quantity, userId, reason) {
   if (!productId || !quantity || quantity <= 0) {
     return Promise.reject('productId and positive quantity are required');
   }
   
-  return store.reduceStock(productId, quantity, reason);
+  return store.reduceStock(productId, quantity, userId, reason);
 }
 
 function setStock(productId, quantity, reason) {

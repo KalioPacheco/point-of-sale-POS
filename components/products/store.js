@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const Model = require('./model');
+const { Product: Model, StockHistory } = require('./model');
 
 function addProduct(product) {
   const newProduct = new Model(product);
@@ -136,7 +136,7 @@ async function removeProduct(productId) {
   return foundProduct.save();
 }
 
-async function addStock(productId, quantity, reason = 'Manual adjustment') {
+async function addStock(productId, quantity, userId, reason = 'Manual adjustment') {
   console.log(`Adding stock: productId=${productId}, quantity=${quantity}, reason=${reason}`);
   
   const product = await Model.findById(productId);
@@ -150,6 +150,16 @@ async function addStock(productId, quantity, reason = 'Manual adjustment') {
   product.updated = true;
   product.updatedAt = new Date();
   
+  await StockHistory.create({
+    product: productId,
+    type: 'add',
+    quantity,
+    previousStock,
+    newStock,
+    reason,
+    user: userId
+  });
+
   const savedProduct = await product.save();
   
   console.log(`Stock successfully updated: ${product.name} - ${previousStock} → ${newStock} (+${quantity})`);
@@ -168,7 +178,7 @@ async function addStock(productId, quantity, reason = 'Manual adjustment') {
   };
 }
 
-async function reduceStock(productId, quantity, reason = 'Manual adjustment') {
+async function reduceStock(productId, quantity, userId, reason = 'Manual adjustment') {
   console.log(`Reducing stock: productId=${productId}, quantity=${quantity}, reason=${reason}`);
   
   const product = await Model.findById(productId);
@@ -189,6 +199,15 @@ async function reduceStock(productId, quantity, reason = 'Manual adjustment') {
   product.updated = true;
   product.updatedAt = new Date();
   
+  await StockHistory.create({
+    product: productId,
+    type: 'set',
+    quantity,
+    previousStock,
+    newStock,
+    reason,
+  });
+
   const savedProduct = await product.save();
   
   console.log(`Stock successfully updated: ${product.name} - ${previousStock} → ${newStock} (-${quantity})`);
@@ -201,13 +220,14 @@ async function reduceStock(productId, quantity, reason = 'Manual adjustment') {
       previousStock,
       newStock,
       quantityReduced: quantity,
-      reason
+      reason,
+      user: userId
     },
     message: `Successfully reduced ${quantity} units from ${product.name}. New stock: ${newStock}`
   };
 }
 
-async function setStock(productId, quantity, reason = 'Stock adjustment') {
+async function setStock(productId, quantity, userId, reason = 'Stock adjustment') {
   console.log(`Setting stock: productId=${productId}, quantity=${quantity}, reason=${reason}`);
   
   const product = await Model.findById(productId);
@@ -235,28 +255,22 @@ async function setStock(productId, quantity, reason = 'Stock adjustment') {
       previousStock,
       newStock,
       difference: newStock - previousStock,
-      reason
+      reason,
+      user: userId
     },
     message: `Successfully set stock to ${quantity} units for ${product.name}`
   };
 }
 
 async function getStockHistory(productId) {
-  const product = await Model.findById(productId).select('name stock updatedAt');
-  if (!product) {
-    throw new Error('Product not found');
-  }
+  const history = await StockHistory.find({
+    product: productId,
+  })
+    .populate('user', 'name email')
+    .sort({ createdAt: -1 })
+    .limit(50);
 
-  return {
-    product: {
-      id: product._id, // eslint-disable-line no-underscore-dangle
-      name: product.name,
-      currentStock: product.stock || 0,
-      lastUpdated: product.updatedAt
-    },
-    message: 'Detailed stock history will be available in future version',
-    note: 'Currently showing only current stock level'
-  };
+  return history;
 }
 
 async function getLowStockProducts(companyId, minStock = 5) {
