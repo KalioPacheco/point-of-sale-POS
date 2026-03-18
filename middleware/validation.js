@@ -90,7 +90,19 @@ const validateUserType = [
 ];
 
 const validateCashMovement = [
-  body('type').isIn(['entrada', 'salida']).withMessage('Tipo debe ser entrada o salida'),
+  body('type')
+    .isIn([
+      'entrada',
+      'salida',
+      'sale',
+      'expense',
+      'withdrawal',
+      'initial_cash',
+      'change_denomination',
+      'refund',
+      'other'
+    ])
+    .withMessage('Tipo invÃ¡lido'),
   body('amount').isFloat({ min: 0 }).withMessage('Monto debe ser mayor a 0'),
   body('description').notEmpty().withMessage('Descripción requerida'),
   handleValidationErrors

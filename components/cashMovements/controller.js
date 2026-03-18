@@ -23,6 +23,12 @@ const validateFilters = (filters) => {
 
 module.exports = {
   createMovement(movementData) {
+    if (movementData.type === 'entrada') {
+      movementData.type = 'initial_cash';
+    } else if (movementData.type === 'salida') {
+      movementData.type = 'expense';
+    }
+
     validateMovementData(movementData);
     return store.createMovement(movementData);
   },
