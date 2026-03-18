@@ -102,7 +102,6 @@ const addStock = function addStock(req, res) {
   reason && reason.trim() !== ''
     ? reason
     : 'Manual adjustment';
-    console.log("REASON FINAL:", finalReason);
     
   if (!quantity || quantity <= 0) {
     return response.error(req, res, 'Quantity must be positive', 400);
@@ -128,7 +127,6 @@ const reduceStock = function reduceStock(req, res) {
   reason && reason.trim() !== ''
     ? reason
     : 'Manual adjustment';
-    console.log("REASON FINAL:", finalReason);
 
   if (!quantity || quantity <= 0) {
     return response.error(req, res, 'Quantity must be positive', 400);
@@ -245,7 +243,6 @@ const addVariantStock = function addVariantStock(req, res) {
   reason && reason.trim() !== ''
     ? reason
     : 'Manual adjustment';
-    console.log("REASON FINAL:", finalReason);
 
   if (!quantity || quantity <= 0) {
     return response.error(req, res, 'Quantity must be positive', 400);
