@@ -32,7 +32,14 @@ const cashRegisterCutSchema = new Schema({
     expectedCash: { type: Number, required: true },
     actualCash: { type: Number, required: true },
     difference: { type: Number, required: true },
-    initialCash: { type: Number, default: 0 }
+    initialCash: { type: Number, default: 0 },
+  
+    totalMovements: { type: Number, default: 0 },
+  
+    movementsBreakdown: {
+      income: { type: Number, default: 0 },
+      expenses: { type: Number, default: 0 }
+    }
   },
   
   notes: String,
@@ -63,6 +70,7 @@ cashRegisterCutSchema.statics.generateCutNumber = async function generateCutNumb
 // FUNCIÓN CORREGIDA: Ahora filtra por cashRegister Y company
 cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes() {
   const Sale = require('../sales/model'); // eslint-disable-line global-require
+  const Movement = require('../cashMovements/model'); // eslint-disable-line global-require
   
   // FILTRO CORREGIDO: Incluir cashRegister y hacer filtros más específicos
   const query = {
@@ -70,10 +78,11 @@ cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes() {
     disable: false
   };
   
-  // Agregar filtro por cashRegister si existe
+  // filtro por cashRegister si existe
   if (this.cashRegister) {
     query.cashRegister = this.cashRegister;
   }
+
   
   
   if (this.company) {
@@ -83,6 +92,47 @@ cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes() {
   console.log('DEBUG - Buscando ventas con filtro:', query);
   
   const sales = await Sale.find(query);
+
+const movementQuery = {
+  createdAt: { $gte: this.shiftStart, $lte: this.shiftEnd },
+  disable: false
+};
+
+if (this.cashRegister) {
+  movementQuery.cashRegister = this.cashRegister;
+}
+
+if (this.company) {
+  movementQuery.company = this.company;
+}
+
+const movements = await Movement.find(movementQuery);
+
+
+let totalMovements = 0;
+let income = 0;
+let expenses = 0;
+
+movements.forEach(mov => {
+  const sign = mov.getMovementSign();
+
+  if (sign > 0) {
+    income += mov.amount;
+  } else if (sign < 0) {
+    expenses += mov.amount;
+  }
+
+  totalMovements += sign * mov.amount;
+});
+
+this.cashControl.totalMovements = totalMovements;
+this.cashControl.movementsBreakdown = {
+  income,
+  expenses
+};
+
+this.cashControl.totalMovements = totalMovements;
+
   
   console.log(`DEBUG - Encontradas ${sales.length} ventas para el corte`);
   
@@ -98,7 +148,7 @@ cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes() {
     
     subtotal += (sale.subtotal || 0) * multiplier;
     taxes += (sale.totalTaxes || 0) * multiplier;
-    total += (sale.total || 0) * multiplier;
+    total += (sale.finalTotal || sale.total || 0) * multiplier;
   });
   
   console.log(`DEBUG - Totales calculados: Subtotal: $${subtotal}, Taxes: $${taxes}, Total: $${total}`);

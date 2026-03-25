@@ -41,9 +41,10 @@ async function createCashRegisterCut(cutData) {
   });
 
   console.log('Calculando ventas para el corte...');
+  
   await newCut.calculateTaxes();
 
-  newCut.cashControl.expectedCash = newCut.salesSummary.netSales + (cutData.initialCash || 0);
+  newCut.cashControl.expectedCash = newCut.salesSummary.netSales + (cutData.initialCash || 0) + (newCut.cashControl.totalMovements || 0);
   newCut.cashControl.actualCash = cutData.actualCash || 0;
   newCut.cashControl.difference = newCut.cashControl.actualCash - newCut.cashControl.expectedCash;
 
@@ -55,13 +56,7 @@ async function createCashRegisterCut(cutData) {
 
   return {
     success: true,
-    cut: {
-      id: savedCut.id,
-      cutNumber: savedCut.cutNumber,
-      total: savedCut.salesSummary.netSales,
-      difference: savedCut.cashControl.difference,
-      salesCount: savedCut.salesSummary.salesCount
-    },
+    cut: savedCut,
     message: `Cut ${cutNumber} created successfully`
   };
 }
@@ -81,6 +76,8 @@ async function getCashRegisterCuts(filters = {}) {
   if (filters.companyId && filters.companyId !== 'default-company-id') {
     query.company = filters.companyId;
   }
+
+  
 
   const cuts = await Model.find(query)
     .populate('cashier', 'userName name')

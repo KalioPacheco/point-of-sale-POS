@@ -83,7 +83,7 @@ async function createProductSnapshots(products) {
   }
 
   try {
-    const Product = require('../products/model'); // eslint-disable-line global-require
+    const {Product} = require('../products/model'); // eslint-disable-line global-require
     
     const snapshotsPromises = products.map(async (item) => {
       const product = await Product.findById(item.productId)
@@ -163,7 +163,7 @@ async function calculateSaleTaxes(products, _companyId) {
   }
 
   try {
-    const Product = require('../products/model'); // eslint-disable-line global-require
+    const {Product} = require('../products/model'); // eslint-disable-line global-require
     
     let subtotal = 0;
     let totalTaxes = 0;
