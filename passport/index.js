@@ -26,6 +26,9 @@ passport.use(
           if (!isSame) {
             return done(null, false, { message: 'Contraseña incorrecta' });
           }
+          if (user.disable === true) {
+            return done(null, false, { message: 'Usuario deshabilitado' });
+          }
           return done(null, user);
         });
       });

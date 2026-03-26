@@ -2,6 +2,7 @@ const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
+const Helper = require('../../helpers');
 const {
   authenticateToken,
   requireRole
@@ -12,6 +13,11 @@ const router = express.Router();
 
 const addCompany = function (req, res) {
   const company = req.body;
+  const scopeCompanyId = Helper.getCompanyId(req);
+  if (!scopeCompanyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
+  company.createdBy = Helper.getUserId(req);
   controller
     .addCompany(company)
     .then(data => {
@@ -24,8 +30,12 @@ const addCompany = function (req, res) {
 
 const listCompanies = function (req, res) {
   const { companyId } = req.params;
+  const scopeCompanyId = Helper.getCompanyId(req);
+  if (!scopeCompanyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   controller
-    .listCompanies(companyId)
+    .listCompanies(companyId, scopeCompanyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -37,8 +47,12 @@ const listCompanies = function (req, res) {
 const updateCompany = function (req, res) {
   const { companyId } = req.params;
   const company = req.body;
+  const scopeCompanyId = Helper.getCompanyId(req);
+  if (!scopeCompanyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   controller
-    .updateCompany(companyId, company)
+    .updateCompany(companyId, company, scopeCompanyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -49,8 +63,12 @@ const updateCompany = function (req, res) {
 
 const removeCompany = function (req, res) {
   const { companyId } = req.params;
+  const scopeCompanyId = Helper.getCompanyId(req);
+  if (!scopeCompanyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   controller
-    .removeCompany(companyId)
+    .removeCompany(companyId, scopeCompanyId)
     .then(data => {
       response.success(req, res, data, 200);
     })

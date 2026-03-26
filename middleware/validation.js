@@ -54,11 +54,43 @@ const validateCustomer = [
   handleValidationErrors
 ];
 
-const validateUser = [
-  body('username').notEmpty().withMessage('Usuario requerido'),
-  body('email').isEmail().withMessage('Email inválido'),
-  body('password').isLength({ min: 6 }).withMessage('Contraseña mínimo 6 caracteres'),
-  body('userTypeId').isInt().withMessage('Tipo de usuario inválido'),
+const validateUserCreate = [
+  body('userName')
+    .notEmpty()
+    .withMessage('Usuario requerido')
+    .isString()
+    .withMessage('Usuario inválido')
+    .trim(),
+  body('password')
+    .notEmpty()
+    .withMessage('Contraseña requerida')
+    .isLength({ min: 6 })
+    .withMessage('Contraseña mínimo 6 caracteres'),
+  body('userTypeId')
+    .optional()
+    .isMongoId()
+    .withMessage('Tipo de usuario inválido'),
+  body('disable')
+    .optional()
+    .isBoolean()
+    .withMessage('Disable debe ser booleano'),
+  handleValidationErrors
+];
+
+const validateUserUpdate = [
+  body('userName')
+    .optional()
+    .isString()
+    .withMessage('Usuario inválido')
+    .trim(),
+  body('userTypeId')
+    .optional()
+    .isMongoId()
+    .withMessage('Tipo de usuario inválido'),
+  body('disable')
+    .optional()
+    .isBoolean()
+    .withMessage('Disable debe ser booleano'),
   handleValidationErrors
 ];
 
@@ -139,7 +171,8 @@ module.exports = {
   validateProduct,
   validateSale,
   validateCustomer,
-  validateUser,
+  validateUserCreate,
+  validateUserUpdate,
   validateCompany,
   validateCoupon,
   validateTax,
