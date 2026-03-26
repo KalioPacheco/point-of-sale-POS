@@ -109,9 +109,21 @@ const validateCashMovement = [
 ];
 
 const validateCashRegisterCut = [
-  body('initialAmount').isFloat({ min: 0 }).withMessage('Monto inicial inválido'),
-  body('finalAmount').isFloat({ min: 0 }).withMessage('Monto final inválido'),
-  body('cutDate').isISO8601().withMessage('Fecha de corte inválida'),
+  body('cashRegister').notEmpty().withMessage('Caja requerida'),
+  body('cashierId').notEmpty().withMessage('Cajero requerido'),
+  body('shiftStart')
+    .isISO8601()
+    .withMessage('Fecha inicio inválida'),
+  body('shiftEnd')
+    .isISO8601()
+    .withMessage('Fecha fin inválida'),
+  body('actualCash')
+    .isFloat({ min: 0 })
+    .withMessage('Efectivo inválido'),
+  body('initialCash')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Monto inicial inválido'),
   handleValidationErrors
 ];
 
