@@ -32,7 +32,12 @@ function listCompanies(companyId) {
 async function updateCompany(companyId, type) {
   const foundBrand = await Model.findOne({
     _id: companyId,
+    disable: false,
   });
+
+  if (!foundBrand) {
+    throw new Error('Empresa no encontrada');
+  }
 
   const { name = '', address = {} } = type;
 
@@ -63,6 +68,10 @@ async function removeCompany(companyId) {
   const foundBrand = await Model.findOne({
     _id: companyId,
   });
+
+  if (!foundBrand) {
+    throw new Error('Empresa no encontrada');
+  }
 
   foundBrand.disable = true;
 

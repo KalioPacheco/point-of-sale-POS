@@ -5,6 +5,27 @@ const UsersModel = require('../users/model');
 
 async function createCashRegisterCut(cutData) {
   
+// 🔒 VALIDAR SI YA EXISTE CORTE HOY
+
+const todayStart = new Date();
+todayStart.setHours(0, 0, 0, 0);
+
+const todayEnd = new Date();
+todayEnd.setHours(23, 59, 59, 999);
+
+const existingCut = await Model.findOne({
+  cashRegister: cutData.cashRegister,
+  createdAt: {
+    $gte: todayStart,
+    $lte: todayEnd
+  },
+  disable: false
+});
+
+if (existingCut) {
+  throw new Error('Ya existe un corte de caja para hoy en esta caja');
+}
+
   const admin = await UsersModel.findById(cutData.administratorId);
   if (!admin?.privileges?.full) throw new Error('User does not have administrator privileges');
 
