@@ -11,7 +11,7 @@ API del sistema POS con autenticación JWT y aislamiento multiempresa.
 
 ## Soft-delete
 
-- Las entidades `users`, `userTypes` y `companies` usan eliminación lógica con `disable=true`.
+- Las entidades `users`, `userTypes`, `companies` y `customer` usan eliminación lógica con `disable=true`.
 - Los listados solo deben considerar registros con `disable=false`.
 
 ## Autenticación y roles
@@ -30,11 +30,11 @@ Base: `/users`
   - Respuesta: token JWT y datos de usuario.
 
 - `GET /`
-  - Auth: JWT
+  - Auth: JWT + `admin`
   - Devuelve usuarios del scope de empresa del token.
 
 - `GET /:userId`
-  - Auth: JWT
+  - Auth: JWT + `admin`
   - Devuelve usuario del scope de empresa del token.
 
 - `POST /`
@@ -63,11 +63,11 @@ Base: `/users`
 Base: `/userTypes`
 
 - `GET /`
-  - Auth: JWT
+  - Auth: JWT + `admin`
   - Lista tipos de usuario del scope de empresa.
 
 - `GET /:typeId`
-  - Auth: JWT
+  - Auth: JWT + `admin`
   - Obtiene tipo de usuario del scope de empresa.
 
 - `POST /`
@@ -113,6 +113,44 @@ Base: `/companies`
 - `DELETE /:companyId`
   - Auth: JWT + `admin`
   - Soft-delete (`disable=true`) solo en scope.
+
+### Tickets
+
+Base: `/tickets`
+
+- `GET /`
+  - Auth: JWT + `admin|manager`
+  - Lista tickets del scope de empresa del token.
+
+### Customers
+
+Base: `/customer`
+
+- `GET /`
+  - Auth: JWT + `admin|manager|vendedor`
+  - Lista clientes activos del scope de empresa.
+
+- `GET /:customerId`
+  - Auth: JWT + `admin|manager|vendedor`
+  - Obtiene cliente activo por ID en scope.
+
+- `POST /`
+  - Auth: JWT + `admin|manager|vendedor`
+  - Body:
+    - `name` (requerido)
+    - `email` (opcional, válido)
+    - `phone` (opcional)
+    - `rfc` (opcional)
+    - `address.street` (opcional)
+  - Nota: `company` y `createdBy` se toman del token.
+
+- `PATCH /:customerId`
+  - Auth: JWT + `admin|manager|vendedor`
+  - Actualiza datos del cliente en scope de empresa.
+
+- `DELETE /:customerId`
+  - Auth: JWT + `admin|manager|vendedor`
+  - Soft-delete (`disable=true`) en scope.
 
 ## Formato general de respuesta
 

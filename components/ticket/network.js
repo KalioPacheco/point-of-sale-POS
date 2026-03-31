@@ -279,7 +279,7 @@ router.post('/', passportConfig.isAuth, validateTicket, (req, res) => {
   return handleRequest(req, res, controller.createTicket(ticketData));
 });
 
-router.get('/', passportConfig.isAuth, (req, res) => {
+router.get('/', passportConfig.isAuth, requireRole(['admin', 'manager']), (req, res) => {
   const filters = { 
     ...req.query, 
     companyId: Helper.getCompanyId(req) 
