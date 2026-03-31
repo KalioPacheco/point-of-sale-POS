@@ -13,10 +13,6 @@ const router = express.Router();
 
 const addCompany = function (req, res) {
   const company = req.body;
-  const scopeCompanyId = Helper.getCompanyId(req);
-  if (!scopeCompanyId) {
-    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
-  }
   company.createdBy = Helper.getUserId(req);
   controller
     .addCompany(company)
@@ -30,12 +26,8 @@ const addCompany = function (req, res) {
 
 const listCompanies = function (req, res) {
   const { companyId } = req.params;
-  const scopeCompanyId = Helper.getCompanyId(req);
-  if (!scopeCompanyId) {
-    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
-  }
   controller
-    .listCompanies(companyId, scopeCompanyId)
+    .listCompanies(companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -47,12 +39,8 @@ const listCompanies = function (req, res) {
 const updateCompany = function (req, res) {
   const { companyId } = req.params;
   const company = req.body;
-  const scopeCompanyId = Helper.getCompanyId(req);
-  if (!scopeCompanyId) {
-    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
-  }
   controller
-    .updateCompany(companyId, company, scopeCompanyId)
+    .updateCompany(companyId, company)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -63,12 +51,8 @@ const updateCompany = function (req, res) {
 
 const removeCompany = function (req, res) {
   const { companyId } = req.params;
-  const scopeCompanyId = Helper.getCompanyId(req);
-  if (!scopeCompanyId) {
-    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
-  }
   controller
-    .removeCompany(companyId, scopeCompanyId)
+    .removeCompany(companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })

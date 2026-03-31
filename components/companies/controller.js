@@ -10,15 +10,11 @@ function addCompany(company) {
   return store.add(company);
 }
 
-function listCompanies(companyId, scopeCompanyId) {
-  if (companyId && scopeCompanyId && companyId !== scopeCompanyId) {
-    return Promise.reject('No autorizado para consultar otra empresa');
-  }
-
-  return store.list(scopeCompanyId || companyId);
+function listCompanies(companyId) {
+  return store.list(companyId);
 }
 
-function updateCompany(companyId, company, scopeCompanyId) {
+function updateCompany(companyId, company) {
   if (!companyId || !company) {
     return Promise.reject(
       `companyId or company is undefined. userId is: ${companyId}, user is: ${JSON.stringify(
@@ -26,18 +22,12 @@ function updateCompany(companyId, company, scopeCompanyId) {
       )}`,
     );
   }
-  if (scopeCompanyId && companyId !== scopeCompanyId) {
-    return Promise.reject('No autorizado para modificar otra empresa');
-  }
   return store.update(companyId, company);
 }
 
-function removeCompany(companyId, scopeCompanyId) {
+function removeCompany(companyId) {
   if (!companyId) {
     return Promise.reject('companyId is undefined');
-  }
-  if (scopeCompanyId && companyId !== scopeCompanyId) {
-    return Promise.reject('No autorizado para eliminar otra empresa');
   }
   return store.remove(companyId);
 }
