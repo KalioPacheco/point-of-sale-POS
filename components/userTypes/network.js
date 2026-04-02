@@ -80,8 +80,8 @@ const removeType = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, authenticateToken, listTypes);
-router.get('/:typeId', passportConfig.isAuth, authenticateToken, listTypes);
+router.get('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listTypes);
+router.get('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listTypes);
 router.post('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserType, addType);           
 router.patch('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserType, updateType);
 router.delete('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), removeType);

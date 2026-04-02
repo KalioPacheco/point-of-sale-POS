@@ -4,7 +4,7 @@ async function addTaxConfig(taxData) {
   try {
     const taxConfig = new TaxConfig(taxData);
     const savedConfig = await taxConfig.save();
-    return await TaxConfig.findById(savedConfig.Sid).populate('createdBy', 'name');
+    return await TaxConfig.findById(savedConfig._id).populate('createdBy', 'name');
   } catch (error) {
     throw new Error(`Error creating tax config: ${error.message}`);
   }

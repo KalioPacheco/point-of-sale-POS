@@ -93,8 +93,8 @@ const removeUser = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, authenticateToken, listUsers);
-router.get('/:userId', passportConfig.isAuth, authenticateToken, listUsers);
+router.get('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listUsers);
+router.get('/:userId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listUsers);
 router.post('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserCreate, addUser);
 router.post('/login', controller.login);
 router.post('/register', passportConfig.isAuth, authenticateToken, requireRole(['admin']), controller.register);
