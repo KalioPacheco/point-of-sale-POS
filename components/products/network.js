@@ -39,8 +39,16 @@ const addProduct = function addProduct(req, res) {
 const listProducts = function listProducts(req, res) {
   const { productId } = req.params;
   const companyId = Helper.getCompanyId(req);
+  const { q, category, disable } = req.query;
+
+  const filters = {
+    q: typeof q === 'string' ? q : undefined,
+    category: typeof category === 'string' ? category : undefined,
+    disable: disable === 'true' ? true : disable === 'false' ? false : undefined,
+  };
+
   controller
-    .listProducts(productId, companyId)
+    .listProducts(productId, companyId, filters)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -90,12 +98,17 @@ const addStock = function addStock(req, res) {
   const { productId } = req.params;
   const { quantity, reason } = req.body;
 
+  const finalReason =
+  reason && reason.trim() !== ''
+    ? reason
+    : 'Manual adjustment';
+    
   if (!quantity || quantity <= 0) {
     return response.error(req, res, 'Quantity must be positive', 400);
   }
 
   controller
-    .addStock(productId, quantity, reason || 'Manual adjustment')
+    .addStock(productId, quantity, req.user.userId, finalReason)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -103,7 +116,6 @@ const addStock = function addStock(req, res) {
       console.error('Error adding stock:', err);
       response.error(req, res, err.message || 'Error adding stock', 500, err);
     });
-  
   return undefined;
 };
 
@@ -111,12 +123,17 @@ const reduceStock = function reduceStock(req, res) {
   const { productId } = req.params;
   const { quantity, reason } = req.body;
 
+  const finalReason =
+  reason && reason.trim() !== ''
+    ? reason
+    : 'Manual adjustment';
+
   if (!quantity || quantity <= 0) {
     return response.error(req, res, 'Quantity must be positive', 400);
   }
 
   controller
-    .reduceStock(productId, quantity, reason || 'Manual adjustment')
+    .reduceStock(productId, quantity, req.user.userId, finalReason)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -222,12 +239,17 @@ const addVariantStock = function addVariantStock(req, res) {
   const { productId, variantId } = req.params;
   const { quantity, reason } = req.body;
 
+  const finalReason =
+  reason && reason.trim() !== ''
+    ? reason
+    : 'Manual adjustment';
+
   if (!quantity || quantity <= 0) {
     return response.error(req, res, 'Quantity must be positive', 400);
   }
 
   controller
-    .addVariantStock(productId, variantId, quantity, reason || 'Manual adjustment')
+    .addVariantStock(productId, variantId, quantity, req.user.userId, finalReason)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -235,7 +257,6 @@ const addVariantStock = function addVariantStock(req, res) {
       console.error('Error adding variant stock:', err);
       response.error(req, res, err.message || 'Error adding variant stock', 500, err);
     });
-  
   return undefined;
 };
 
@@ -356,7 +377,7 @@ const getProductsByCategories = function getProductsByCategories(req, res) {
 };
 
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), listProducts);
+router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['vendedor', 'admin', 'manager']), listProducts);
 router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, addProduct); 
 router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, updateProduct);
 router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), updateProduct);

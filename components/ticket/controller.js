@@ -182,7 +182,7 @@ const createTicketWithCoupon = async (saleData, ticketConfig = {}) => {
 };
 
 const buildTicketItems = async (products) => {
-  const Product = require('../products/model'); // eslint-disable-line global-require
+  const {Product} = require('../products/model'); // eslint-disable-line global-require
   const items = [];
   
   for (const productItem of products) {

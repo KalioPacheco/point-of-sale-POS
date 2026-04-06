@@ -3,6 +3,10 @@ const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const {
+  authenticateToken,
+  requireRole
+} = require('../../middleware/auth');
 const { validateUserType } = require('../../middleware/validation');
 
 const router = express.Router();
@@ -10,7 +14,12 @@ const router = express.Router();
 const addType = function (req, res) {
   const type = req.body;
   const companyId = Helper.getCompanyId(req);
+  if (!companyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
+  const createdBy = Helper.getUserId(req);
   type.companyId = companyId;
+  type.createdBy = createdBy;
   controller
     .addType(type)
     .then(data => {
@@ -24,6 +33,9 @@ const addType = function (req, res) {
 const listTypes = function (req, res) {
   const { typeId } = req.params;
   const companyId = Helper.getCompanyId(req);
+  if (!companyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   controller
     .listTypes(typeId, companyId)
     .then(product => {
@@ -38,9 +50,12 @@ const updateType = function (req, res) {
   const { typeId } = req.params;
   const type = req.body;
   const companyId = Helper.getCompanyId(req);
+  if (!companyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   type.companyId = companyId;
   controller
-    .updateType(typeId, type)
+    .updateType(typeId, type, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -51,8 +66,12 @@ const updateType = function (req, res) {
 
 const removeType = function (req, res) {
   const { typeId } = req.params;
+  const companyId = Helper.getCompanyId(req);
+  if (!companyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   controller
-    .removeType(typeId)
+    .removeType(typeId, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -61,10 +80,10 @@ const removeType = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, listTypes);
-router.get('/:typeId', passportConfig.isAuth, listTypes);
-router.post('/', passportConfig.isAuth, validateUserType, addType);           
-router.patch('/:typeId', passportConfig.isAuth, validateUserType, updateType);
-router.delete('/:typeId', passportConfig.isAuth, removeType);
+router.get('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listTypes);
+router.get('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listTypes);
+router.post('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserType, addType);           
+router.patch('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserType, updateType);
+router.delete('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), removeType);
 
 module.exports = router;

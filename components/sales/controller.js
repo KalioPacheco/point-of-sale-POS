@@ -1,5 +1,61 @@
 const store = require('./store');
 
+async function deductInventoryFromSale(products, saleId) {
+  if (!products || !Array.isArray(products) || products.length === 0) {
+    return;
+  }
+
+  const productsController = require('../products/controller'); // eslint-disable-line global-require
+  const reason = `Venta ${saleId}`;
+
+  const itemsToDeduct = await Promise.all(
+    products.map(async (item) => {
+      const { productId, quantity: qty } = item;
+      const quantity = qty || 1;
+      if (!productId || quantity < 1) return null;
+      const stockInfo = await productsController.getProductStock(productId);
+      if (stockInfo.hasVariants) return null;
+      return { productId, quantity };
+    })
+  );
+
+  await Promise.all(
+    itemsToDeduct
+      .filter(Boolean)
+      .map(({ productId, quantity }) =>
+        productsController.reduceStock(productId, quantity, reason)
+      )
+  );
+}
+
+async function validateSaleStock(products) {
+  if (!products || !Array.isArray(products) || products.length === 0) {
+    return;
+  }
+
+  const productsController = require('../products/controller'); // eslint-disable-line global-require
+
+  const validations = await Promise.all(
+    products.map(async (item) => {
+      const { productId, quantity: qty } = item;
+      const quantity = qty || 1;
+      if (!productId || quantity < 1) return null;
+      const stockInfo = await productsController.getProductStock(productId);
+      if (stockInfo.hasVariants) return null;
+      return { name: stockInfo.name, available: stockInfo.stock || 0, quantity };
+    })
+  );
+
+  const failed = validations.find(
+    (v) => v && v.available < v.quantity
+  );
+  if (failed) {
+    throw new Error(
+      `Stock insuficiente para "${failed.name}". Disponible: ${failed.available}, solicitado: ${failed.quantity}`
+    );
+  }
+}
+
 function listSales(sellId, companyId) {
   return store.list(sellId, companyId);
 }
@@ -27,7 +83,7 @@ async function createProductSnapshots(products) {
   }
 
   try {
-    const Product = require('../products/model'); // eslint-disable-line global-require
+    const {Product} = require('../products/model'); // eslint-disable-line global-require
     
     const snapshotsPromises = products.map(async (item) => {
       const product = await Product.findById(item.productId)
@@ -107,7 +163,7 @@ async function calculateSaleTaxes(products, _companyId) {
   }
 
   try {
-    const Product = require('../products/model'); // eslint-disable-line global-require
+    const {Product} = require('../products/model'); // eslint-disable-line global-require
     
     let subtotal = 0;
     let totalTaxes = 0;
@@ -215,19 +271,47 @@ async function validateCouponForSale(couponCode, companyId, products, customerId
   }
 }
 
-async function addSell(sell) {
+async function addSell(sell, idempotencyKey) {
   if (!sell) {
-    return Promise.reject(new Error(`Sell data is empty. User: ${JSON.stringify(sell)}`));
+    return Promise.reject(new Error('Sell data is empty'));
+  }
+
+  if (!idempotencyKey) {
+    return Promise.reject(new Error('Idempotency key is required'));
   }
 
   try {
-    // Procesar venta con snapshots históricos
+    const existingSale = await store.findByIdempotencyKey(idempotencyKey);
+
+    if (existingSale) {
+      return existingSale; 
+    }
     const processedSale = await processSaleWithCoupon(sell);
-    return store.add(processedSale);
-    
+
+    await validateSaleStock(processedSale.products);
+
+    const saleWithKey = {
+      ...processedSale,
+      idempotencyKey
+    };
+
+    const newSale = await store.add(saleWithKey);
+
+    try {
+      await deductInventoryFromSale(newSale.products, newSale.id);
+    } catch (inventoryError) {
+      await store.remove(newSale.id);
+      return Promise.reject(new Error(
+        `Error al descontar inventario: ${inventoryError.message}. La venta fue revertida.`
+      ));
+    }
+
+    return newSale;
+
   } catch (error) {
     return Promise.reject(new Error(`Error adding sale: ${error.message}`));
   }
+  
 }
 
 // NUEVA FUNCIÓN: Obtener datos históricos de una venta

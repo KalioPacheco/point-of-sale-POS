@@ -139,7 +139,7 @@ function listUsers(userId, companyId) {
   return store.list(userId, companyId);
 }
 
-function updateUser(userId, user) {
+function updateUser(userId, user, companyId) {
   if (!userId || !user) {
     return Promise.reject(
       `userId or user is undefined. userId is: ${userId}, user is: ${JSON.stringify(
@@ -147,14 +147,14 @@ function updateUser(userId, user) {
       )}`,
     );
   }
-  return store.update(userId, user);
+  return store.update(userId, user, companyId);
 }
 
-function removeUser(userId) {
+function removeUser(userId, companyId) {
   if (!userId) {
     return Promise.reject('userId is undefined');
   }
-  return store.remove(userId);
+  return store.remove(userId, companyId);
 }
 
 module.exports = {

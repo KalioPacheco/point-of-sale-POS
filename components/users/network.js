@@ -7,12 +7,21 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
+const {
+  validateUserCreate,
+  validateUserUpdate
+} = require('../../middleware/validation');
 const router = express.Router();
 
 const addUser = function (req, res) {
   const user = req.body;
   const companyId = Helper.getCompanyId(req);
+  if (!companyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
+  const createdBy = Helper.getUserId(req);
   user.companyId = companyId;
+  user.createdBy = createdBy;
   controller
     .addUser(user)
     .then(data => {
@@ -37,6 +46,9 @@ const logout = function (req, res) {
 const listUsers = function (req, res) {
   const { userId } = req.params;
   const companyId = Helper.getCompanyId(req);
+  if (!companyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   controller
     .listUsers(userId, companyId)
     .then(product => {
@@ -51,9 +63,12 @@ const updateUser = function (req, res) {
   const { userId } = req.params;
   const user = req.body;
   const companyId = Helper.getCompanyId(req);
+  if (!companyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   user.companyId = companyId;
   controller
-    .updateUser(userId, user)
+    .updateUser(userId, user, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -64,8 +79,12 @@ const updateUser = function (req, res) {
 
 const removeUser = function (req, res) {
   const { userId } = req.params;
+  const companyId = Helper.getCompanyId(req);
+  if (!companyId) {
+    return response.error(req, res, 'Company scope is required', 403, 'Missing company in token');
+  }
   controller
-    .removeUser(userId)
+    .removeUser(userId, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -74,13 +93,13 @@ const removeUser = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, listUsers);
-router.get('/:userId', passportConfig.isAuth, listUsers);
-router.post('/', addUser);
+router.get('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listUsers);
+router.get('/:userId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listUsers);
+router.post('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserCreate, addUser);
 router.post('/login', controller.login);
-router.post('/register', controller.register, authenticateToken, requireRole(['admin']));
-router.post('/logout', passportConfig.isAuth, logout);
-router.patch('/:userId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), updateUser);
+router.post('/register', passportConfig.isAuth, authenticateToken, requireRole(['admin']), controller.register);
+router.post('/logout', passportConfig.isAuth, authenticateToken, logout);
+router.patch('/:userId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserUpdate, updateUser);
 router.delete('/:userId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), removeUser);
 
 module.exports = router;

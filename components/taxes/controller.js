@@ -115,7 +115,7 @@ async function getProductWithTaxes(productId, companyId) {
 
   try {
 
-    const Product = require('../products/model'); // eslint-disable-line global-require
+    const {Product} = require('../products/model'); // eslint-disable-line global-require
     const product = await Product.findById(productId);
     
     if (!product) {

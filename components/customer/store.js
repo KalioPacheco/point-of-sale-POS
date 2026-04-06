@@ -31,41 +31,74 @@ function listCustomer(customerId, companyId) {
   });
 }
 
-async function updateCustomer(customerId, customer) {
+async function updateCustomer(customerId, customer, companyId) {
   const foundCustomer = await Model.findOne({
     _id: customerId,
+    company: companyId,
+    disable: false,
   });
 
+  if (!foundCustomer) {
+    throw new Error('Customer not found');
+  }
+
   const {
-    name = '',
-    lastNames = '',
-    description = '',
-    photo = '',
-    address = {},
+    name,
+    lastNames,
+    email,
+    phone,
+    rfc,
+    description,
+    photo,
+    address,
   } = customer;
 
-  if (name) {
-    foundCustomer.name = name;
+  if (typeof name === 'string' && name.trim()) {
+    foundCustomer.name = name.trim();
   }
-  if (lastNames) {
-    foundCustomer.lastNames = lastNames;
+
+  if (typeof lastNames === 'string') {
+    foundCustomer.lastNames = lastNames.trim();
   }
-  if (description) {
-    foundCustomer.description = description;
+
+  if (typeof email === 'string') {
+    foundCustomer.email = email.trim().toLowerCase();
   }
-  if (photo) {
+
+  if (typeof phone === 'string') {
+    foundCustomer.phone = phone.trim();
+  }
+
+  if (typeof rfc === 'string') {
+    foundCustomer.rfc = rfc.trim().toUpperCase();
+  }
+
+  if (typeof description === 'string') {
+    foundCustomer.description = description.trim();
+  }
+
+  if (typeof photo === 'string') {
     foundCustomer.photo = photo;
   }
-  if (address) {
+
+  if (typeof address === 'string') {
     foundCustomer.address = {
-      ...foundCustomer.address,
+      ...(foundCustomer.address || {}),
+      street: address,
+    };
+  }
+
+  if (address && typeof address === 'object') {
+    foundCustomer.address = {
+      ...(foundCustomer.address || {}),
+      ...address,
       number: {
-        ...foundCustomer.address.number,
-        ...address.number,
+        ...((foundCustomer.address && foundCustomer.address.number) || {}),
+        ...(address.number || {}),
       },
       geoPoint: {
-        ...foundCustomer.address.geoPoint,
-        ...address.geoPoint,
+        ...((foundCustomer.address && foundCustomer.address.geoPoint) || {}),
+        ...(address.geoPoint || {}),
       },
     };
   }
@@ -76,12 +109,20 @@ async function updateCustomer(customerId, customer) {
   return foundCustomer.save();
 }
 
-async function removeCustomer(customerId) {
+async function removeCustomer(customerId, companyId) {
   const foundCustomer = await Model.findOne({
     _id: customerId,
+    company: companyId,
+    disable: false,
   });
 
+  if (!foundCustomer) {
+    throw new Error('Customer not found');
+  }
+
   foundCustomer.disable = true;
+  foundCustomer.updated = true;
+  foundCustomer.updatedAt = new Date();
 
   return foundCustomer.save();
 }
