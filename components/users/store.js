@@ -1,14 +1,40 @@
 const passport = require('passport');
 const Model = require('./model');
 
+function sanitizeUser(userDocument) {
+  if (!userDocument) {
+    return userDocument;
+  }
+
+  const user = typeof userDocument.toObject === 'function'
+    ? userDocument.toObject()
+    : { ...userDocument };
+
+  delete user.password;
+  return user;
+}
+
 function addUser(user) {
-  const newUser = new Model(user);
+  const payload = {
+    ...user,
+    company: user.companyId || user.company,
+    typeUser: user.userTypeId || user.typeUser,
+  };
+  delete payload.companyId;
+  delete payload.userTypeId;
+
+  const newUser = new Model(payload);
   return new Promise((resolve, reject) => {
     Model.findOne({ userName: user.userName }, (err, exist) => {
+      if (err) {
+        reject(err);
+        return;
+      }
       if (exist) {
         reject('El usuario ya existe');
+        return;
       }
-      resolve(Promise.resolve(newUser.save()));
+      resolve(Promise.resolve(newUser.save()).then(saved => sanitizeUser(saved)));
     });
   });
 }
@@ -26,6 +52,7 @@ function listUsers(userId, companyId) {
     filter.disable = false;
 
     Model.find(filter)
+      .select('-password')
       .populate('typeUser')
       .populate('company')
       .exec((err, populated) => {
@@ -33,22 +60,32 @@ function listUsers(userId, companyId) {
           reject(err);
           return false;
         }
-        resolve(populated);
+        resolve(populated.map(item => sanitizeUser(item)));
         return true;
       });
   });
 }
 
-async function updateUser(userId, data) {
+async function updateUser(userId, data, companyId) {
   const foundBrand = await Model.findOne({
     _id: userId,
+    company: companyId,
+    disable: false,
   });
+
+  if (!foundBrand) {
+    throw new Error('Usuario no encontrado en el scope de la empresa');
+  }
 
   const {
     name = '',
     photo = '',
     lastNames = '',
+    userName = '',
+    disable,
+    role = '',
     typeUser = '',
+    userTypeId = '',
     privileges = {},
   } = data;
 
@@ -61,8 +98,17 @@ async function updateUser(userId, data) {
   if (lastNames) {
     foundBrand.lastNames = lastNames;
   }
-  if (typeUser) {
-    foundBrand.typeUser = typeUser;
+  if (userName) {
+    foundBrand.userName = userName;
+  }
+  if (typeUser || userTypeId) {
+    foundBrand.typeUser = userTypeId || typeUser;
+  }
+  if (role) {
+    foundBrand.role = role;
+  }
+  if (typeof disable === 'boolean') {
+    foundBrand.disable = disable;
   }
 
   foundBrand.privileges = {
@@ -72,17 +118,24 @@ async function updateUser(userId, data) {
   foundBrand.updated = true;
   foundBrand.updatedAt = new Date();
 
-  return foundBrand.save();
+  const savedUser = await foundBrand.save();
+  return sanitizeUser(savedUser);
 }
 
-async function removeUser(userId) {
+async function removeUser(userId, companyId) {
   const foundBrand = await Model.findOne({
     _id: userId,
+    company: companyId,
   });
+
+  if (!foundBrand) {
+    throw new Error('Usuario no encontrado en el scope de la empresa');
+  }
 
   foundBrand.disable = true;
 
-  return foundBrand.save();
+  const savedUser = await foundBrand.save();
+  return sanitizeUser(savedUser);
 }
 
 module.exports = {

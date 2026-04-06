@@ -1,7 +1,13 @@
 const Model = require('./model');
 
 function addType(type) {
-  const newUser = new Model(type);
+  const payload = {
+    ...type,
+    company: type.companyId || type.company,
+  };
+  delete payload.companyId;
+
+  const newUser = new Model(payload);
   return newUser.save();
 }
 
@@ -31,10 +37,16 @@ function listTypes(typeId, companyId) {
   });
 }
 
-async function updateType(typeId, type) {
+async function updateType(typeId, type, companyId) {
   const foundBrand = await Model.findOne({
     _id: typeId,
+    company: companyId,
+    disable: false,
   });
+
+  if (!foundBrand) {
+    throw new Error('Tipo de usuario no encontrado en el scope de la empresa');
+  }
 
   const { name = '' } = type;
 
@@ -48,10 +60,15 @@ async function updateType(typeId, type) {
   return foundBrand.save();
 }
 
-async function removeType(typeId) {
+async function removeType(typeId, companyId) {
   const foundBrand = await Model.findOne({
     _id: typeId,
+    company: companyId,
   });
+
+  if (!foundBrand) {
+    throw new Error('Tipo de usuario no encontrado en el scope de la empresa');
+  }
 
   foundBrand.disable = true;
 

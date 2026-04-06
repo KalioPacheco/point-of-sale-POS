@@ -2,6 +2,7 @@ const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
 const passportConfig = require('../../passport');
+const Helper = require('../../helpers');
 const {
   authenticateToken,
   requireRole
@@ -12,6 +13,7 @@ const router = express.Router();
 
 const addCompany = function (req, res) {
   const company = req.body;
+  company.createdBy = Helper.getUserId(req);
   controller
     .addCompany(company)
     .then(data => {

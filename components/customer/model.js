@@ -6,6 +6,9 @@ const mySchema = new Schema(
   {
     name: String,
     lastNames: String,
+    email: String,
+    phone: String,
+    rfc: String,
     description: String,
     address: {
       street: String,

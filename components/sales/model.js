@@ -40,6 +40,12 @@ const mySchema = new Schema({
     type: Boolean,
     default: false,
   },
+
+  idempotencyKey: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
   
   products: [productSnapshotSchema],
   oldProducts: [

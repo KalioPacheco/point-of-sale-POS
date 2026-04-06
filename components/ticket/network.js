@@ -235,6 +235,35 @@ router.post('/:ticketId/cancel', passportConfig.isAuth, validateId('ticketId'), 
   return handleRequest(req, res, controller.cancelTicket(ticketId, reason, userId));
 });
 
+router.get('/:saleId', passportConfig.isAuth, validateId('saleId'), (req, res, next) => {
+  const { saleId } = req.params;
+  const format = req.query.format || '80mm';
+  const wantsPdf = req.headers.accept?.includes('application/pdf');
+  const hasFormatQuery = typeof req.query.format === 'string';
+
+  if (!wantsPdf && !hasFormatQuery) {
+    return next();
+  }
+
+  if (!['58mm', '80mm'].includes(format)) {
+    return response.error(req, res, 'Invalid format. Use: 58mm or 80mm', 400);
+  }
+
+  return store.generateTicketPDFFromSale(
+    saleId,
+    format,
+    res,
+    Helper.getUserId(req),
+    Helper.getCompanyId(req)
+  ).catch(err => {
+    console.error('Sale PDF error:', err);
+    if (!res.headersSent) {
+      return response.error(req, res, err.message || 'PDF error', 500);
+    }
+    return undefined;
+  });
+});
+
 
 
 router.get('/:ticketId', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
@@ -250,7 +279,7 @@ router.post('/', passportConfig.isAuth, validateTicket, (req, res) => {
   return handleRequest(req, res, controller.createTicket(ticketData));
 });
 
-router.get('/', passportConfig.isAuth, (req, res) => {
+router.get('/', passportConfig.isAuth, requireRole(['admin', 'manager']), (req, res) => {
   const filters = { 
     ...req.query, 
     companyId: Helper.getCompanyId(req) 

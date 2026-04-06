@@ -1,19 +1,14 @@
 exports.getCompanyId = req => {
-  // CAMBIO: Verificar que req.user y req.user.company existen
   if (!req || !req.user) {
-    console.log('No req.user found, using default company');
-    return 'default-company-id';
+    return null;
   }
   
-  // El modelo usa 'company', no 'companyId'
   if (req.user.company) {
     const companyId = req.user.company.toString().split('"')?.[0] || '';
-    return companyId || 'default-company-id';
+    return companyId || null;
   }
   
-  // Fallback: usar company por defecto
-  console.log('User has no company field, using default');
-  return 'default-company-id';
+  return null;
 };
 
 exports.getUserId = req => {
@@ -31,6 +26,11 @@ exports.getUserId = req => {
   
   if (req.user.id) {
     const userId = req.user.id.toString().split('"')?.[0] || '';
+    return userId;
+  }
+
+  if (req.user.userId) {
+    const userId = req.user.userId.toString().split('"')?.[0] || '';
     return userId;
   }
   

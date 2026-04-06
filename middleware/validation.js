@@ -26,8 +26,16 @@ const validateCategory = [
 const validateProduct = [
   body('name').notEmpty().withMessage('Nombre requerido'),
   body('price').isFloat({ min: 0 }).withMessage('Precio inválido'),
-  body('categoryId').isInt().withMessage('Categoría inválida'),
-  body('brandId').optional().isInt(),
+  body('categories')
+    .isArray()
+    .withMessage('Las categorías deben ser un arreglo'),
+  body('categories.*')
+    .isMongoId()
+    .withMessage('Categoría inválida'),
+  body('brand')
+    .optional()
+    .isMongoId()
+    .withMessage('Marca inválida'),
   handleValidationErrors
 ];
 
@@ -46,11 +54,43 @@ const validateCustomer = [
   handleValidationErrors
 ];
 
-const validateUser = [
-  body('username').notEmpty().withMessage('Usuario requerido'),
-  body('email').isEmail().withMessage('Email inválido'),
-  body('password').isLength({ min: 6 }).withMessage('Contraseña mínimo 6 caracteres'),
-  body('userTypeId').isInt().withMessage('Tipo de usuario inválido'),
+const validateUserCreate = [
+  body('userName')
+    .notEmpty()
+    .withMessage('Usuario requerido')
+    .isString()
+    .withMessage('Usuario inválido')
+    .trim(),
+  body('password')
+    .notEmpty()
+    .withMessage('Contraseña requerida')
+    .isLength({ min: 6 })
+    .withMessage('Contraseña mínimo 6 caracteres'),
+  body('userTypeId')
+    .optional()
+    .isMongoId()
+    .withMessage('Tipo de usuario inválido'),
+  body('disable')
+    .optional()
+    .isBoolean()
+    .withMessage('Disable debe ser booleano'),
+  handleValidationErrors
+];
+
+const validateUserUpdate = [
+  body('userName')
+    .optional()
+    .isString()
+    .withMessage('Usuario inválido')
+    .trim(),
+  body('userTypeId')
+    .optional()
+    .isMongoId()
+    .withMessage('Tipo de usuario inválido'),
+  body('disable')
+    .optional()
+    .isBoolean()
+    .withMessage('Disable debe ser booleano'),
   handleValidationErrors
 ];
 
@@ -82,16 +122,40 @@ const validateUserType = [
 ];
 
 const validateCashMovement = [
-  body('type').isIn(['entrada', 'salida']).withMessage('Tipo debe ser entrada o salida'),
+  body('type')
+    .isIn([
+      'entrada',
+      'salida',
+      'sale',
+      'expense',
+      'withdrawal',
+      'initial_cash',
+      'change_denomination',
+      'refund',
+      'other'
+    ])
+    .withMessage('Tipo invÃ¡lido'),
   body('amount').isFloat({ min: 0 }).withMessage('Monto debe ser mayor a 0'),
   body('description').notEmpty().withMessage('Descripción requerida'),
   handleValidationErrors
 ];
 
 const validateCashRegisterCut = [
-  body('initialAmount').isFloat({ min: 0 }).withMessage('Monto inicial inválido'),
-  body('finalAmount').isFloat({ min: 0 }).withMessage('Monto final inválido'),
-  body('cutDate').isISO8601().withMessage('Fecha de corte inválida'),
+  body('cashRegister').notEmpty().withMessage('Caja requerida'),
+  body('cashierId').notEmpty().withMessage('Cajero requerido'),
+  body('shiftStart')
+    .isISO8601()
+    .withMessage('Fecha inicio inválida'),
+  body('shiftEnd')
+    .isISO8601()
+    .withMessage('Fecha fin inválida'),
+  body('actualCash')
+    .isFloat({ min: 0 })
+    .withMessage('Efectivo inválido'),
+  body('initialCash')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Monto inicial inválido'),
   handleValidationErrors
 ];
 
@@ -107,7 +171,8 @@ module.exports = {
   validateProduct,
   validateSale,
   validateCustomer,
-  validateUser,
+  validateUserCreate,
+  validateUserUpdate,
   validateCompany,
   validateCoupon,
   validateTax,

@@ -14,7 +14,7 @@ function listCustomer(customerId, companyId) {
   return store.list(customerId, companyId);
 }
 
-function updateCustomer(customerId, customer) {
+function updateCustomer(customerId, customer, companyId) {
   if (!customerId || !customer) {
     return Promise.reject(
       `customerId or customer is undefined. customerId is: ${customerId}, customer is: ${JSON.stringify(
@@ -22,14 +22,14 @@ function updateCustomer(customerId, customer) {
       )}`,
     );
   }
-  return store.update(customerId, customer);
+  return store.update(customerId, customer, companyId);
 }
 
-function removeCustomer(customerId) {
+function removeCustomer(customerId, companyId) {
   if (!customerId) {
     return Promise.reject('customerId is undefined');
   }
-  return store.remove(customerId);
+  return store.remove(customerId, companyId);
 }
 
 module.exports = {
