@@ -59,6 +59,36 @@ async function deductInventoryFromSale(products, saleId, companyId = null) {
   }
 }
 
+/**
+ * Devuelve inventario descontado en una venta (compensación si falla el cupón tras persistir la venta).
+ */
+async function restoreInventoryFromSale(products, saleId, companyId = null) {
+  if (!products || !Array.isArray(products) || products.length === 0) {
+    return;
+  }
+
+  const productsController = require('../products/controller'); // eslint-disable-line global-require
+  const reason = `Rollback compensación tras error de cupón en venta ${saleId}`;
+
+  // eslint-disable-next-line no-restricted-syntax
+  for (const item of products) {
+    const { productId, quantity: qty } = item;
+    const quantity = qty || 1;
+    if (!productId || quantity < 1) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const stockInfo = await productsController.getProductStock(productId, companyId);
+    if (stockInfo.hasVariants) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await productsController.addStock(
+      productId,
+      quantity,
+      null,
+      reason,
+      companyId
+    );
+  }
+}
+
 async function validateSaleStock(products) {
   if (!products || !Array.isArray(products) || products.length === 0) {
     return;
@@ -334,6 +364,32 @@ async function addSell(sell, idempotencyKey) {
       );
       saleError.code = inventoryError.code;
       return Promise.reject(saleError);
+    }
+
+    if (newSale.couponCode && newSale.couponId) {
+      const couponsController = require('../coupons/controller'); // eslint-disable-line global-require
+      try {
+        const mappedProducts = couponsController.mapSaleProductsForCouponDiscount(newSale.products);
+        await couponsController.recordCouponUsageForCompletedSale({
+          couponId: newSale.couponId,
+          couponCode: newSale.couponCode,
+          companyId: sell.companyId,
+          saleId: newSale.id,
+          subtotal: newSale.subtotal,
+          total: newSale.total,
+          products: mappedProducts,
+          customerId: sell.customerId ?? null,
+          customerPhone: sell.customerPhone,
+          customerEmail: sell.customerEmail
+        });
+      } catch (couponError) {
+        await restoreInventoryFromSale(newSale.products, newSale.id, sell.companyId);
+        await store.remove(newSale.id);
+        const saleError = new Error(
+          `Error al registrar cupón: ${couponError.message}. La venta fue revertida.`
+        );
+        return Promise.reject(saleError);
+      }
     }
 
     return newSale;
