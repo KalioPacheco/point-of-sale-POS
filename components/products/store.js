@@ -190,50 +190,75 @@ async function addStock(productId, quantity, userId, reason = 'Manual adjustment
 
 async function reduceStock(productId, quantity, userId, reason = 'Manual adjustment', companyId = null) {
   console.log(`Reducing stock: productId=${productId}, quantity=${quantity}, reason=${reason}`);
-  
-  const product = await Model.findOne(addCompanyScope({ _id: productId, disable: false }, companyId));
-  if (!product) {
-    throw new Error('Product not found');
+  const baseFilter = addCompanyScope({ _id: productId, disable: false }, companyId);
+  const updatedAt = new Date();
+
+  const updatedProduct = await Model.findOneAndUpdate(
+    {
+      ...baseFilter,
+      stock: { $gte: quantity },
+    },
+    {
+      $inc: { stock: -quantity },
+      $set: {
+        updated: true,
+        updatedAt,
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+    }
+  );
+
+  if (!updatedProduct) {
+    const existingProduct = await Model.findOne(baseFilter).select('name stock');
+
+    if (!existingProduct) {
+      throw new Error('Product not found');
+    }
+
+    const available = existingProduct.stock || 0;
+    console.warn(
+      `[stock-rejected] productId=${productId} requested=${quantity} available=${available} reason=${reason}`
+    );
+
+    const stockError = new Error(
+      `Stock insuficiente para "${existingProduct.name}". Disponible: ${available}, solicitado: ${quantity}`
+    );
+    stockError.code = 'INSUFFICIENT_STOCK';
+    stockError.available = available;
+    stockError.requested = quantity;
+    throw stockError;
   }
 
-  const previousStock = product.stock || 0;
+  const newStock = updatedProduct.stock || 0;
+  const previousStock = newStock + quantity;
 
-  if (previousStock < quantity) {
-    throw new Error(`Insufficient stock. Available: ${previousStock}, Requested: ${quantity}`);
-  }
-
-  const newStock = previousStock - quantity;
-
-
-  product.stock = newStock;
-  product.updated = true;
-  product.updatedAt = new Date();
-  
   await StockHistory.create({
     product: productId,
-    type: 'set',
+    type: 'reduce',
     quantity,
     previousStock,
     newStock,
     reason,
+    user: userId,
   });
 
-  const savedProduct = await product.save();
-  
-  console.log(`Stock successfully updated: ${product.name} - ${previousStock} → ${newStock} (-${quantity})`);
+  console.log(`Stock successfully updated: ${updatedProduct.name} - ${previousStock} → ${newStock} (-${quantity})`);
 
   return {
     success: true,
     product: {
-      id: savedProduct._id, // eslint-disable-line no-underscore-dangle
-      name: savedProduct.name,
+      id: updatedProduct._id, // eslint-disable-line no-underscore-dangle
+      name: updatedProduct.name,
       previousStock,
       newStock,
       quantityReduced: quantity,
       reason,
       user: userId
     },
-    message: `Successfully reduced ${quantity} units from ${product.name}. New stock: ${newStock}`
+    message: `Successfully reduced ${quantity} units from ${updatedProduct.name}. New stock: ${newStock}`
   };
 }
 

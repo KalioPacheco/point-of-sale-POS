@@ -9,6 +9,7 @@
     "lintfix": "eslint . --ext .js --fix --cache",
     "test": "node --test",
     "test:aud01": "node --test tests/tenant-scoping.test.js",
+    "test:aud08": "node --test tests/stock-concurrency.test.js",
     "check": "pnpm lint && pnpm test"
   },
   "dependencies": {
