@@ -212,19 +212,18 @@ async function processSaleWithCoupon(saleData) {
       const saleForCoupon = {
         subtotal: taxCalculation.subtotal,
         total: taxCalculation.total,
-        products: saleData.products,
-        saleId: saleData.id || 'temp'
+        products: saleData.products
       };
       
-      couponResult = await couponsController.applyCoupon(
+      couponResult = await couponsController.validateCoupon(
         saleData.couponCode,
         saleData.companyId,
         saleForCoupon,
         saleData.customerId
       );
       
-      if (!couponResult.success) {
-        return Promise.reject(new Error(couponResult.error));
+      if (!couponResult.valid) {
+        return Promise.reject(new Error(couponResult.error || 'Cupón no válido'));
       }
     }
     

@@ -1,4 +1,5 @@
 const { body, validationResult } = require('express-validator');
+const { CASH_MOVEMENT_TYPES } = require('../components/cashMovements/types');
 
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
@@ -123,17 +124,7 @@ const validateUserType = [
 
 const validateCashMovement = [
   body('type')
-    .isIn([
-      'entrada',
-      'salida',
-      'sale',
-      'expense',
-      'withdrawal',
-      'initial_cash',
-      'change_denomination',
-      'refund',
-      'other'
-    ])
+    .isIn(CASH_MOVEMENT_TYPES)
     .withMessage('Tipo invÃ¡lido'),
   body('amount').isFloat({ min: 0 }).withMessage('Monto debe ser mayor a 0'),
   body('description').notEmpty().withMessage('Descripción requerida'),

@@ -1,140 +1,112 @@
 const mongoose = require('mongoose');
+const {
+  CASH_MOVEMENT_TYPES,
+  CASH_MOVEMENT_IN_TYPES,
+  CASH_MOVEMENT_OUT_TYPES,
+  CASH_MOVEMENT_TYPE_DESCRIPTIONS,
+} = require('./types');
 
 const { Schema } = mongoose;
 
 const cashMovementSchema = new Schema({
-
-  movementNumber: { 
-    type: String, 
-    unique: true, 
-    required: true 
+  movementNumber: {
+    type: String,
+    unique: true,
+    required: true,
   },
-  
-  
-  type: { 
-    type: String, 
-    enum: ['sale', 'expense', 'withdrawal', 'initial_cash', 'change_denomination', 'refund', 'other'],
-    required: true 
+  type: {
+    type: String,
+    enum: CASH_MOVEMENT_TYPES,
+    required: true,
   },
-  
- 
-  amount: { 
-    type: Number, 
-    required: true 
+  amount: {
+    type: Number,
+    required: true,
   },
-  
-  concept: { 
-    type: String, 
-    required: true 
+  concept: {
+    type: String,
+    required: true,
   },
-  
   description: String,
-  
-
-  paymentMethod: { 
-    type: String, 
+  paymentMethod: {
+    type: String,
     enum: ['cash', 'card', 'mixed'],
-    default: 'cash'
+    default: 'cash',
   },
-  
-  user: { 
-    type: Schema.ObjectId, 
-    ref: 'Users', 
-    required: true 
+  user: {
+    type: Schema.ObjectId,
+    ref: 'Users',
+    required: true,
   },
-  
-  company: { 
-    type: Schema.ObjectId, 
-    ref: 'Companies' 
+  company: {
+    type: Schema.ObjectId,
+    ref: 'Companies',
   },
-  
-
   cashRegister: String,
-  
-  saleReference: { 
-    type: Schema.ObjectId, 
-    ref: 'Sales' 
+  saleReference: {
+    type: Schema.ObjectId,
+    ref: 'Sales',
   },
-  
-
   receiptNumber: String,
-  
-
-  authorized: { 
-    type: Boolean, 
-    default: true 
+  authorized: {
+    type: Boolean,
+    default: true,
   },
-  
-  authorizedBy: { 
-    type: Schema.ObjectId, 
-    ref: 'Users' 
+  authorizedBy: {
+    type: Schema.ObjectId,
+    ref: 'Users',
   },
-  
   notes: String,
-  
-  disable: { 
-    type: Boolean, 
-    default: false 
-  }
-}, { 
-  timestamps: true 
+  disable: {
+    type: Boolean,
+    default: false,
+  },
+}, {
+  timestamps: true,
 });
 
 cashMovementSchema.statics.generateMovementNumber = async function generateMovementNumber() {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
   const prefix = `MOV-${dateStr}`;
-  
+
   const lastMovement = await this.findOne({
-    movementNumber: { $regex: `^${prefix}` }
+    movementNumber: { $regex: `^${prefix}` },
   }).sort({ movementNumber: -1 });
-  
+
   let sequence = 1;
   if (lastMovement && lastMovement.movementNumber) {
     const parts = lastMovement.movementNumber.split('-');
     const lastSequence = parseInt(parts[parts.length - 1], 10) || 0;
     sequence = lastSequence + 1;
   }
-  
+
   return `${prefix}-${sequence.toString().padStart(4, '0')}`;
 };
 
 cashMovementSchema.methods.getMovementSign = function getMovementSign() {
-  const inTypes = ['sale', 'initial_cash'];
-  const outTypes = ['expense', 'withdrawal', 'refund'];
-  
-  if (inTypes.includes(this.type)) {
+  if (CASH_MOVEMENT_IN_TYPES.includes(this.type)) {
     return 1;
   }
-  if (outTypes.includes(this.type)) {
+  if (CASH_MOVEMENT_OUT_TYPES.includes(this.type)) {
     return -1;
   }
-  return 0; 
+  return 0;
 };
 
 cashMovementSchema.methods.getTypeDescription = function getTypeDescription() {
-  const descriptions = {
-    sale: 'Venta',
-    expense: 'Gasto',
-    withdrawal: 'Retiro',
-    initial_cash: 'Efectivo Inicial',
-    change_denomination: 'Cambio de Denominación',
-    refund: 'Devolución',
-    other: 'Otro'
-  };
-  
-  return descriptions[this.type] || this.type;
+  return CASH_MOVEMENT_TYPE_DESCRIPTIONS[this.type] || this.type;
 };
 
 cashMovementSchema.methods.getFormattedMovement = function getFormattedMovement() {
   const sign = this.getMovementSign();
-  let signSymbol = '±';
+  let signSymbol = '+/-';
   if (sign > 0) {
     signSymbol = '+';
   } else if (sign < 0) {
     signSymbol = '-';
   }
-  
+
   return {
     number: this.movementNumber,
     type: this.getTypeDescription(),
@@ -143,7 +115,7 @@ cashMovementSchema.methods.getFormattedMovement = function getFormattedMovement(
     sign: signSymbol,
     date: this.createdAt,
     user: this.user,
-    cashRegister: this.cashRegister || 'N/A'
+    cashRegister: this.cashRegister || 'N/A',
   };
 };
 

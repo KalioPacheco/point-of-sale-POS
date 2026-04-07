@@ -15,7 +15,7 @@ function listProducts(userId, companyId, filters = {}) {
   return store.list(userId, companyId, filters);
 }
 
-function updateProduct(productId, product) {
+function updateProduct(productId, product, companyId = null) {
   if (!productId || !product) {
     return Promise.reject(
       `productId or product is undefined. productId is: ${productId}, product is: ${JSON.stringify(
@@ -23,62 +23,62 @@ function updateProduct(productId, product) {
       )}`,
     );
   }
-  return store.update(productId, product);
+  return store.update(productId, product, companyId);
 }
 
-function removeProduct(productId) {
+function removeProduct(productId, companyId = null) {
   if (!productId) {
     return Promise.reject('productId is undefined');
   }
-  return store.remove(productId);
+  return store.remove(productId, companyId);
 }
 
-function addStock(productId, quantity, userId, reason) {
+function addStock(productId, quantity, userId, reason, companyId = null) {
   if (!productId || !quantity || quantity <= 0) {
     return Promise.reject('productId and positive quantity are required');
   }
   
-  return store.addStock(productId, quantity, userId, reason);
+  return store.addStock(productId, quantity, userId, reason, companyId);
 }
 
-function reduceStock(productId, quantity, userId, reason) {
+function reduceStock(productId, quantity, userId, reason, companyId = null) {
   if (!productId || !quantity || quantity <= 0) {
     return Promise.reject('productId and positive quantity are required');
   }
   
-  return store.reduceStock(productId, quantity, userId, reason);
+  return store.reduceStock(productId, quantity, userId, reason, companyId);
 }
 
-function setStock(productId, quantity, reason) {
+function setStock(productId, quantity, reason, companyId = null) {
   if (!productId || quantity < 0) {
     return Promise.reject('productId and non-negative quantity are required');
   }
   
-  return store.setStock(productId, quantity, reason);
+  return store.setStock(productId, quantity, null, reason, companyId);
 }
 
-function getStockHistory(productId) {
+function getStockHistory(productId, companyId = null) {
   if (!productId) {
     return Promise.reject('productId is required');
   }
   
-  return store.getStockHistory(productId);
+  return store.getStockHistory(productId, companyId);
 }
 
 function getLowStockProducts(companyId, minStock = 5) {
   return store.getLowStockProducts(companyId, minStock);
 }
 
-function getProductStock(productId) {
+function getProductStock(productId, companyId = null) {
   if (!productId) {
     return Promise.reject('productId is required');
   }
   
-  return store.getProductStock(productId);
+  return store.getProductStock(productId, companyId);
 }
 
 
-function addVariant(productId, variantData) {
+function addVariant(productId, variantData, companyId = null) {
   if (!productId) {
     return Promise.reject('productId is required');
   }
@@ -87,10 +87,10 @@ function addVariant(productId, variantData) {
     return Promise.reject('Variant data with name is required');
   }
   
-  return store.addVariant(productId, variantData);
+  return store.addVariant(productId, variantData, companyId);
 }
 
-function addVariantStock(productId, variantId, quantity, reason) {
+function addVariantStock(productId, variantId, quantity, reason, companyId = null) {
   if (!productId) {
     return Promise.reject('productId is required');
   }
@@ -103,10 +103,10 @@ function addVariantStock(productId, variantId, quantity, reason) {
     return Promise.reject('positive quantity is required');
   }
   
-  return store.addVariantStock(productId, variantId, quantity, reason);
+  return store.addVariantStock(productId, variantId, quantity, reason, companyId);
 }
 
-function disableVariant(productId, variantId, reason) {
+function disableVariant(productId, variantId, reason, companyId = null) {
   if (!productId) {
     return Promise.reject('productId is required');
   }
@@ -115,10 +115,10 @@ function disableVariant(productId, variantId, reason) {
     return Promise.reject('variantId is required');
   }
   
-  return store.disableVariant(productId, variantId, reason);
+  return store.disableVariant(productId, variantId, reason, companyId);
 }
 
-function enableVariant(productId, variantId, reason) {
+function enableVariant(productId, variantId, reason, companyId = null) {
   if (!productId) {
     return Promise.reject('productId is required');
   }
@@ -127,7 +127,7 @@ function enableVariant(productId, variantId, reason) {
     return Promise.reject('variantId is required');
   }
   
-  return store.enableVariant(productId, variantId, reason);
+  return store.enableVariant(productId, variantId, reason, companyId);
 }
 
 

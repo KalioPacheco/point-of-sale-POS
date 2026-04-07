@@ -143,7 +143,9 @@ const previewSaleWithCoupon = function previewSaleWithCoupon(req, res) {
       response.success(req, res, data, 200);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      const message = err && err.message ? err.message : 'Internal error';
+      const isBusinessValidation = /Cup[oó]n|cupon|m[ií]nima|v[aá]lido|expirad|no encontrado/i.test(message);
+      response.error(req, res, message, isBusinessValidation ? 400 : 500, err);
     });
 };
 

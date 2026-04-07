@@ -158,3 +158,18 @@ Salvo login/registro, la API usa envelope:
 
 - success: `{ "error": "", "body": any }`
 - error: `{ "error": string, "body": "" }`
+
+## Calidad y validacion local
+
+Scripts disponibles:
+
+- `pnpm lint`: lint del backend.
+- `pnpm lintfix`: autocorreccion de lint cuando aplica.
+- `pnpm test`: pruebas con `node --test`.
+- `pnpm check`: ejecuta `lint + test`.
+
+Flujo recomendado antes de merge:
+
+1. `pnpm lint`
+2. `pnpm test`
+3. `pnpm check`

@@ -2,6 +2,7 @@ const store = require('./store');
 const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const Users = require('./model');
+const Companies = require('../companies/model');
 
 function addUser(user) {
   if (!user) {
@@ -12,7 +13,7 @@ function addUser(user) {
 }
 
 function login(req, res, next) {
-  passport.authenticate('local', { session: false }, (err, user, info) => {
+  passport.authenticate('local', { session: false }, async (err, user, info) => {
     if (err) {
       return next(err);
     }
@@ -26,11 +27,28 @@ function login(req, res, next) {
     }
     
     try {
+      if (!user.company) {
+        return res.status(403).json({
+          success: false,
+          message: 'Usuario sin empresa asignada. Contacta al administrador.',
+          code: 'COMPANY_REQUIRED'
+        });
+      }
+
+      const company = await Companies.findById(user.company).select('_id disable name').lean();
+      if (!company || company.disable === true) {
+        return res.status(403).json({
+          success: false,
+          message: 'La empresa asignada a este usuario está deshabilitada. Reasigna una empresa activa.',
+          code: 'COMPANY_DISABLED'
+        });
+      }
+
       const payload = {
         userId: user._id,
         userName: user.userName,
         typeUser: user.typeUser,  
-        company: user.company,
+        company: company._id,
         role: user.role  
       };
       
@@ -50,7 +68,7 @@ function login(req, res, next) {
           name: user.name,
           lastNames: user.lastNames,
           typeUser: user.typeUser,
-          company: user.company,
+          company: company._id,
           photo: user.photo,
           role: user.role
         }
