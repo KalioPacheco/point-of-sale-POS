@@ -10,7 +10,7 @@ async function listCategories(categoryId, companyId) {
   const filter = {};
   
   if (categoryId) {
-    filter.id = categoryId;
+    filter._id = categoryId;
   }
 
   
@@ -30,9 +30,11 @@ async function listCategories(categoryId, companyId) {
   return categories;
 }
 
-async function updateCategory(categoryId, category) {
+async function updateCategory(categoryId, category, companyId) {
   const foundCategory = await Model.findOne({
     _id: categoryId,
+    company: companyId,
+    disable: false,
   });
 
   if (!foundCategory) {
@@ -51,9 +53,11 @@ async function updateCategory(categoryId, category) {
   return foundCategory.save();
 }
 
-async function removeCategory(categoryId) {
+async function removeCategory(categoryId, companyId) {
   const foundCategory = await Model.findOne({
     _id: categoryId,
+    company: companyId,
+    disable: false,
   });
 
   if (!foundCategory) {

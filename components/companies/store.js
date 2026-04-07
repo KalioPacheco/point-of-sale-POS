@@ -209,6 +209,7 @@ async function updateCompany(companyId, type) {
 async function removeCompany(companyId) {
   const foundBrand = await Model.findOne({
     _id: companyId,
+    disable: false,
   });
 
   if (!foundBrand) {

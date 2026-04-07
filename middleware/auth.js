@@ -1,5 +1,15 @@
 const jwt = require('jsonwebtoken');
 
+const normalizeRole = (role = '') => {
+  const normalized = `${role}`.trim().toLowerCase();
+
+  if (normalized === 'administrador') {
+    return 'admin';
+  }
+
+  return normalized;
+};
+
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -39,7 +49,10 @@ const requireRole = (roles) => (req, res, next) => {
     });
   }
 
-  if (!roles.includes(req.user.role)) {
+  const allowedRoles = roles.map(normalizeRole);
+  const currentRole = normalizeRole(req.user.role || req.user.userType);
+
+  if (!allowedRoles.includes(currentRole)) {
     return res.status(403).json({
       error: 'Acceso denegado por rol insuficiente'
     });
@@ -51,6 +64,21 @@ const requireRole = (roles) => (req, res, next) => {
 const requireAdmin = requireRole(['admin', 'administrador']);
 
 const requireManager = requireRole(['admin', 'administrador', 'manager']);
+
+const requireTenant = (req, res, next) => {
+  const companyId = req.user && req.user.company
+    ? (typeof req.user.company === 'string' ? req.user.company : req.user.company.toString?.())
+    : null;
+
+  if (!companyId) {
+    return res.status(403).json({
+      error: 'Tenant inválido',
+      message: 'No se encontró empresa asociada al token'
+    });
+  }
+
+  return next();
+};
 
 const optionalAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -101,6 +129,7 @@ module.exports = {
   requireRole,
   requireAdmin,
   requireManager,
+  requireTenant,
   optionalAuth,
   requireOwnership
 };

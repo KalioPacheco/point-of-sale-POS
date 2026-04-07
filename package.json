@@ -8,6 +8,7 @@
     "lint": "eslint . --ext .js --cache",
     "lintfix": "eslint . --ext .js --fix --cache",
     "test": "node --test",
+    "test:aud01": "node --test tests/tenant-scoping.test.js",
     "check": "pnpm lint && pnpm test"
   },
   "dependencies": {
