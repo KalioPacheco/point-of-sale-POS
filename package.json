@@ -5,8 +5,10 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",
-    "lintfix": "eslint src --fix --cache",
-    "test": "node --test"
+    "lint": "eslint . --ext .js --cache",
+    "lintfix": "eslint . --ext .js --fix --cache",
+    "test": "node --test",
+    "check": "pnpm lint && pnpm test"
   },
   "dependencies": {
     "axios": "^1.10.0",
