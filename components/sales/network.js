@@ -9,6 +9,15 @@ const { validateSale } = require('../../middleware/validation');
 
 const router = express.Router();
 
+const handleSaleError = (req, res, err) => {
+  const message = err && err.message ? err.message : 'Internal error';
+  const isStockConflict =
+    err?.code === 'INSUFFICIENT_STOCK'
+    || /stock insuficiente|insufficient stock/i.test(message);
+
+  response.error(req, res, message, isStockConflict ? 409 : 500, err);
+};
+
 
 
 const addSell = function addSell(req, res) {
@@ -31,7 +40,7 @@ const addSell = function addSell(req, res) {
       }, 201);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      handleSaleError(req, res, err);
     });
 };
 
@@ -118,7 +127,7 @@ const addSellWithCoupon = function addSellWithCoupon(req, res) {
       }, 201);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      handleSaleError(req, res, err);
     });
 };
 
