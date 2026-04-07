@@ -38,8 +38,16 @@ router.put('/store-config', passportConfig.isAuth, (req, res) => {
   const storeInfo = req.body;
   const companyId = Helper.getCompanyId(req);
 
+  if (!companyId || companyId === 'default-company-id') {
+    return response.error(req, res, 'Company scope required to persist store-config', 400);
+  }
+
   if (!storeInfo.name) {
     return response.error(req, res, 'Store name required', 400);
+  }
+
+  if (storeInfo.address !== undefined && typeof storeInfo.address !== 'string') {
+    return response.error(req, res, 'Store address must be a string', 400);
   }
 
   return handleRequest(req, res, controller.updateStoreInfo(storeInfo, companyId));

@@ -11,6 +11,20 @@ const { validateCompany } = require('../../middleware/validation');
 
 const router = express.Router();
 
+const resolveBusinessError = (err) => {
+  const message = err && err.message ? err.message : '';
+
+  if (/usuarios activos asignados/i.test(message)) {
+    return { status: 409, message };
+  }
+
+  if (/Empresa no encontrada/i.test(message)) {
+    return { status: 404, message };
+  }
+
+  return null;
+};
+
 const addCompany = function (req, res) {
   const company = req.body;
   company.createdBy = Helper.getUserId(req);
@@ -45,6 +59,10 @@ const updateCompany = function (req, res) {
       response.success(req, res, data, 200);
     })
     .catch(err => {
+      const known = resolveBusinessError(err);
+      if (known) {
+        return response.error(req, res, known.message, known.status, err);
+      }
       response.error(req, res, 'Internal error', 500, err);
     });
 };
@@ -57,6 +75,10 @@ const removeCompany = function (req, res) {
       response.success(req, res, data, 200);
     })
     .catch(err => {
+      const known = resolveBusinessError(err);
+      if (known) {
+        return response.error(req, res, known.message, known.status, err);
+      }
       response.error(req, res, 'Internal error', 500, err);
     });
 };

@@ -6,13 +6,68 @@ const CashRegisterCutsModel = require('../cashRegisterCuts/model');
 const UsersModel = require('../users/model');
 const CompaniesModel = require('../companies/model');
 
-let storeConfig = {
+const DEFAULT_STORE_CONFIG = {
   name: 'Nombre de la Empresa',
   address: 'Dirección de la Empresa',
   phone: '',
   taxId: '',
   email: ''
 };
+
+const cleanString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const withFallback = (value, fallback = '') => {
+  const cleaned = cleanString(value);
+  return cleaned || fallback;
+};
+
+const formatCompanyAddress = (address) => {
+  if (typeof address === 'string') {
+    return withFallback(address, DEFAULT_STORE_CONFIG.address);
+  }
+
+  if (!address || typeof address !== 'object') {
+    return DEFAULT_STORE_CONFIG.address;
+  }
+
+  const street = cleanString(address.street);
+  const ext = cleanString(address.number?.ext);
+  const int = cleanString(address.number?.int);
+  const numberText = [ext, int ? `Int ${int}` : ''].filter(Boolean).join(' ');
+  const line1 = [street, numberText].filter(Boolean).join(' ');
+  const city = cleanString(address.city);
+  const state = cleanString(address.state);
+  const country = cleanString(address.country);
+
+  const formatted = [line1, city, state, country].filter(Boolean).join(', ');
+  return formatted || DEFAULT_STORE_CONFIG.address;
+};
+
+const mapCompanyToStoreConfig = (company) => {
+  if (!company) {
+    return { ...DEFAULT_STORE_CONFIG };
+  }
+
+  const persisted = company.ticketStoreConfig && typeof company.ticketStoreConfig === 'object'
+    ? company.ticketStoreConfig
+    : {};
+
+  return {
+    name: withFallback(persisted.name, withFallback(company.name, DEFAULT_STORE_CONFIG.name)),
+    address: withFallback(persisted.address, formatCompanyAddress(company.address)),
+    phone: withFallback(persisted.phone, ''),
+    taxId: withFallback(persisted.taxId, withFallback(company.rfc, '')),
+    email: withFallback(persisted.email, '')
+  };
+};
+
+const normalizeStoreConfigInput = (storeInfo, currentStoreInfo = DEFAULT_STORE_CONFIG) => ({
+  name: withFallback(storeInfo?.name, currentStoreInfo.name),
+  address: withFallback(storeInfo?.address, currentStoreInfo.address),
+  phone: withFallback(storeInfo?.phone, currentStoreInfo.phone),
+  taxId: withFallback(storeInfo?.taxId, currentStoreInfo.taxId),
+  email: withFallback(storeInfo?.email, currentStoreInfo.email)
+});
 
 const normalizeObjectId = (value) => {
   if (!value) return undefined;
@@ -34,63 +89,59 @@ const normalizeTaxBreakdown = (value) => {
     }));
 };
 
-const getCompany = async (companyId) => {
+const getCompany = async (companyId, options = {}) => {
+  const companiesModel = options.companiesModel || CompaniesModel;
   if (!companyId || companyId === 'default-company-id') return null;
   try {
-    return await CompaniesModel.findById(companyId);
+    return await companiesModel.findById(companyId);
   } catch {
     return null;
   }
 };
 
-async function getStoreInfo(companyId) {
+async function getStoreInfo(companyId, options = {}) {
   try {
-    const company = await getCompany(companyId);
-    
-    if (company?.name && 
-        company.name !== 'Nombre de la Empresa' && 
-        company.name.trim() !== '') {
-      return {
-        name: company.name,
-        address: company.address || 'Dirección de la Empresa',
-        phone: company.phone || '',
-        taxId: company.taxId || '',
-        email: company.email || ''
-      };
-    }
-    
-    return { ...storeConfig };
-    
+    const company = await getCompany(companyId, options);
+    if (!company) return { ...DEFAULT_STORE_CONFIG };
+    return mapCompanyToStoreConfig(company);
   } catch (error) {
     console.error('Error getting store info:', error);
-    return { ...storeConfig };
+    return { ...DEFAULT_STORE_CONFIG };
   }
 }
 
-async function updateStoreInfo(storeInfo, companyId) {
+async function updateStoreInfo(storeInfo, companyId, options = {}) {
   try {
-    storeConfig = {
-      name: storeInfo.name || storeConfig.name,
-      address: storeInfo.address || storeConfig.address,
-      phone: storeInfo.phone || storeConfig.phone,
-      taxId: storeInfo.taxId || storeConfig.taxId,
-      email: storeInfo.email || storeConfig.email
+    const company = await getCompany(companyId, options);
+    if (!company) {
+      throw new Error('No se encontró empresa para persistir store-config');
+    }
+
+    const currentStoreInfo = mapCompanyToStoreConfig(company);
+    const normalizedStoreInfo = normalizeStoreConfigInput(storeInfo, currentStoreInfo);
+
+    company.ticketStoreConfig = {
+      ...(company.ticketStoreConfig || {}),
+      ...normalizedStoreInfo,
+      updatedAt: new Date(),
     };
 
-    const company = await getCompany(companyId);
-    if (company) {
-      Object.assign(company, storeInfo);
-      await company.save().catch(() => console.log('Company save failed'));
+    if (normalizedStoreInfo.name) {
+      company.name = normalizedStoreInfo.name;
     }
+
+    await company.save();
 
     return {
       success: true,
       message: 'Store updated',
-      storeInfo: { ...storeConfig }
+      storeInfo: mapCompanyToStoreConfig(company)
     };
 
   } catch (error) {
-    console.error('Error updating store:', error);
+    if (!/No se encontró empresa para persistir store-config/i.test(error.message || '')) {
+      console.error('Error updating store:', error);
+    }
     throw error;
   }
 }
@@ -118,10 +169,12 @@ async function createTicket(ticketData) {
       ticketData.transactionInfo?.cashRegister || 'CAJA-1'
     );
 
-    const storeInfo = ticketData.storeInfo?.name && 
+    const storeInfoSource = ticketData.storeInfo?.name && 
       ticketData.storeInfo.name !== 'Nombre de la Empresa' 
       ? ticketData.storeInfo 
       : await getStoreInfo(ticketData.companyId);
+
+    const storeInfo = normalizeStoreConfigInput(storeInfoSource, DEFAULT_STORE_CONFIG);
 
     const newTicket = new Model({
       ticketNumber,
@@ -409,7 +462,7 @@ async function generateTicketData(ticketId) {
 
     const data = {
       storeName: ticket.storeInfo.name,
-      storeAddress: ticket.storeInfo.address,
+      storeAddress: withFallback(ticket.storeInfo.address, DEFAULT_STORE_CONFIG.address),
       storePhone: ticket.storeInfo.phone,
       storeEmail: ticket.storeInfo.email,
       taxId: ticket.storeInfo.taxId,
@@ -838,6 +891,12 @@ module.exports = {
   getTicketStats,
   updateStoreInfo,
   getStoreInfo,
+  __storeConfigUtils: {
+    formatCompanyAddress,
+    mapCompanyToStoreConfig,
+    normalizeStoreConfigInput,
+    DEFAULT_STORE_CONFIG,
+  },
   processSaleTicket,
   processRefundTicket,
   createTicketFromSaleWithTaxes,
