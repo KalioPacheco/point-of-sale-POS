@@ -109,6 +109,7 @@ router.post('/process-sale-with-taxes', authenticateToken, (req, res) => {
 
 router.post('/with-coupon', authenticateToken, (req, res) => {
   const saleData = req.body;
+  const companyId = Helper.getCompanyId(req);
   const ticketConfig = {
     cashierName: req.user?.name || 'Cajero',
     cashRegister: req.body.cashRegister || 'CAJA-1',
@@ -119,7 +120,7 @@ router.post('/with-coupon', authenticateToken, (req, res) => {
     storeEmail: req.body.storeEmail || ''
   };
   
-  return handleRequest(req, res, controller.createTicketWithCoupon(saleData, ticketConfig));
+  return handleRequest(req, res, controller.createTicketWithCoupon(saleData, ticketConfig, companyId));
 });
 
 router.post('/process-sale-with-coupon', authenticateToken, (req, res) => {

@@ -89,6 +89,35 @@ const normalizeTaxBreakdown = (value) => {
     }));
 };
 
+const normalizeAppliedCoupon = (value, totals = {}) => {
+  if (!value || typeof value !== 'object') return null;
+
+  const validDiscountTypes = ['percentage', 'fixed_amount'];
+  const couponId = normalizeObjectId(value.couponId || value.id);
+  const code = value.code || totals.couponCode || null;
+  const name = value.name || totals.couponName || null;
+  const description = value.description || null;
+  const discountType = validDiscountTypes.includes(value.discountType)
+    ? value.discountType
+    : undefined;
+  const discountValue = Number(value.discountValue);
+  const discountAmount = Number(value.discountAmount ?? totals.couponDiscount ?? 0);
+
+  if (!couponId && !code && !name && !description && !discountAmount) {
+    return null;
+  }
+
+  return {
+    couponId,
+    code,
+    name,
+    description,
+    discountType,
+    discountValue: Number.isNaN(discountValue) ? undefined : discountValue,
+    discountAmount
+  };
+};
+
 const getCompany = async (companyId, options = {}) => {
   const companiesModel = options.companiesModel || CompaniesModel;
   if (!companyId || companyId === 'default-company-id') return null;
@@ -190,8 +219,7 @@ async function createTicket(ticketData) {
       notes: ticketData.notes,
       company: companyId,
       taxBreakdown: normalizeTaxBreakdown(ticketData.taxBreakdown),
-      coupon: ticketData.coupon || null,
-      discount: ticketData.discount || null
+      appliedCoupon: normalizeAppliedCoupon(ticketData.appliedCoupon, ticketData.totals)
     });
 
     newTicket.calculateTotals();
@@ -209,7 +237,7 @@ async function createTicket(ticketData) {
         totalTaxes: savedTicket.totals.totalTaxes,
         taxBreakdown: savedTicket.taxBreakdown,
         discounts: savedTicket.totals.discounts,
-        coupon: savedTicket.coupon
+        appliedCoupon: savedTicket.appliedCoupon
       },
       message: `Ticket ${ticketNumber} created`
     };
@@ -285,8 +313,12 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
       details: sale.paymentDetails || {}
     },
     taxBreakdown: sale.taxBreakdown || [],
-    coupon: sale.coupon || null,
-    discount: sale.discount || null,
+    appliedCoupon: sale.couponId || sale.couponCode ? {
+      couponId: sale.couponId,
+      code: sale.couponCode,
+      name: sale.couponName,
+      discountAmount: sale.couponDiscount || 0
+    } : null,
     companyId
   };
 };
@@ -456,9 +488,13 @@ async function getTicketsByDateRange(companyId, startDate, endDate, statuses = [
 async function generateTicketData(ticketId) {
   try {
     const ticket = await getTicketById(ticketId);
-    const couponCode = ticket.totals?.couponCode || ticket.coupon?.code || ticket.discount?.couponCode;
-    const couponName = ticket.totals?.couponName || ticket.coupon?.description || ticket.discount?.description;
-    const discountAmount = ticket.totals?.couponDiscount || ticket.totals?.discounts || ticket.discount?.amount || 0;
+    const couponCode = ticket.appliedCoupon?.code || ticket.totals?.couponCode || null;
+    const couponName = ticket.appliedCoupon?.name || ticket.totals?.couponName || null;
+    const couponDescription = ticket.appliedCoupon?.description || couponName;
+    const discountAmount = ticket.appliedCoupon?.discountAmount
+      || ticket.totals?.couponDiscount
+      || ticket.totals?.discounts
+      || 0;
 
     const data = {
       storeName: ticket.storeInfo.name,
@@ -498,7 +534,7 @@ async function generateTicketData(ticketId) {
       notes: ticket.notes,
       couponCode,
       couponName,
-      couponDescription: couponName,
+      couponDescription,
       discountAmount
     };
 
@@ -823,8 +859,7 @@ const createSaleTicket = async (saleData, userId, companyId, withTaxes = false) 
         details: saleData.paymentDetails || {}
       },
       taxBreakdown: withTaxes ? (saleData.taxBreakdown || []) : [],
-      coupon: saleData.coupon || null,
-      discount: saleData.discount || null,
+      appliedCoupon: normalizeAppliedCoupon(saleData.appliedCoupon, totals),
       notes: saleData.notes,
       companyId
     });
@@ -839,6 +874,10 @@ async function processSaleTicket(saleData, userId, companyId) {
 }
 
 async function processSaleTicketWithTaxes(saleData, userId, companyId) {
+  return createSaleTicket(saleData, userId, companyId, true);
+}
+
+async function processSaleTicketWithCoupon(saleData, userId, companyId) {
   return createSaleTicket(saleData, userId, companyId, true);
 }
 
@@ -901,6 +940,7 @@ module.exports = {
   processRefundTicket,
   createTicketFromSaleWithTaxes,
   processSaleTicketWithTaxes,
+  processSaleTicketWithCoupon,
   getTicketsByDateRange,
   generateTicketPDFFromSale
 };
