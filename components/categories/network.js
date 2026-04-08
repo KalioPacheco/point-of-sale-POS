@@ -1,7 +1,6 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
@@ -70,11 +69,11 @@ const removeCategory = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), listCategories);
-router.get('/:categoryId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), listCategories);
-router.post('/', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateCategory, addCategory);          
-router.patch('/:categoryId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateCategory, updateCategory);
-router.delete('/:categoryId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), removeCategory);
+router.get('/', authenticateToken, requireTenant, requireRole(['admin', 'manager']), listCategories);
+router.get('/:categoryId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), listCategories);
+router.post('/', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateCategory, addCategory);          
+router.patch('/:categoryId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateCategory, updateCategory);
+router.delete('/:categoryId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), removeCategory);
 
 
 module.exports = router;

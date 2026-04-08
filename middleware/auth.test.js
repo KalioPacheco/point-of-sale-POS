@@ -44,7 +44,22 @@ test('authenticateToken rechaza cuando no llega token', () => {
 test('authenticateToken autentica y propaga req.user con token valido', () => {
   process.env.JWT_SECRET = 'qa-secret';
 
-  const token = jwt.sign({ id: 'user-1', role: 'admin' }, process.env.JWT_SECRET, {
+  const Users = require('../components/users/model');
+  const originalFindById = Users.findById;
+
+  Users.findById = () => ({
+    select: () => ({
+      lean: async () => ({
+        _id: 'user-1',
+        userName: 'admin',
+        role: 'admin',
+        company: 'company-1',
+        tokenVersion: 0,
+      }),
+    }),
+  });
+
+  const token = jwt.sign({ userId: 'user-1', role: 'admin', tokenVersion: 0 }, process.env.JWT_SECRET, {
     expiresIn: '1h',
   });
 
@@ -52,13 +67,17 @@ test('authenticateToken autentica y propaga req.user con token valido', () => {
   const res = createMockRes();
   let nextCalled = false;
 
-  authenticateToken(req, res, () => {
+  return authenticateToken(req, res, () => {
     nextCalled = true;
-  });
+  }).then(() => {
+    Users.findById = originalFindById;
 
-  assert.equal(nextCalled, true);
-  assert.equal(req.user.id, 'user-1');
-  assert.equal(req.user.role, 'admin');
+    assert.equal(nextCalled, true);
+    assert.equal(req.user.id, 'user-1');
+    assert.equal(req.user.userId, 'user-1');
+    assert.equal(req.user.role, 'admin');
+    assert.equal(req.user.company, 'company-1');
+  });
 });
 
 test('requireRole bloquea rol insuficiente y permite rol autorizado', () => {

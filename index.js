@@ -1,8 +1,7 @@
 const express = require('express');
-const session = require('express-session');
-const MongoStore = require('connect-mongo');
 const passport = require('passport');
 require('dotenv').config();
+require('./passport');
 const router = require('./routes');
 const db = require('./database');
 
@@ -13,22 +12,7 @@ app.use(
   express.urlencoded({ limit: '1mb', extended: true, parameterLimit: 1000 }),
 );
 
-
-app.use(
-  session({
-    secret: process.env.SECRET_KEY_SESSION,
-    resave: true,
-    saveUninitialized: true,
-    store: MongoStore.create({
-      mongoUrl: process.env.DB_CONECTION_DEV,
-      stringify: false,
-    }),
-  }),
-);
-
-
 app.use(passport.initialize());
-app.use(passport.session());
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -40,7 +24,6 @@ app.use((req, res, next) => {
 app.options('*', (req, res) => {
   res.sendStatus(200);
 });
-
 
 router(app);
 

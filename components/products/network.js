@@ -3,7 +3,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers'); 
 const {
   authenticateToken,
@@ -388,24 +387,24 @@ const getProductsByCategories = function getProductsByCategories(req, res) {
 };
 
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['vendedor', 'admin', 'manager']), listProducts);
-router.post('/', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateProduct, addProduct); 
-router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateProduct, updateProduct);
-router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), updateProduct);
-router.delete('/:productId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), removeProduct);
-router.put('/:productId/stock/add', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), addStock);
-router.put('/:productId/stock/reduce', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), reduceStock);
-router.put('/:productId/stock/set', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), setStock);
-router.get('/:productId/stock/history', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), getStockHistory);
-router.get('/:productId/stock', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin', 'manager']), getProductStock);
-router.post('/:productId/variants', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), addVariant);
-router.put('/:productId/variants/:variantId/stock/add', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), addVariantStock);
-router.put('/:productId/variants/:variantId/disable', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), disableVariant);
-router.put('/:productId/variants/:variantId/enable', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), enableVariant);
-router.get('/reports/low-stock', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), getLowStockProducts);
-router.post('/check-coupon-eligibility', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), checkCouponEligibility);
-router.post('/calculate-price-with-coupon', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), calculatePriceWithCoupon);
-router.get('/eligible-for-coupons', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), getEligibleForCoupons);
-router.post('/by-categories', passportConfig.isAuth, authenticateToken, requireTenant, requireRole(['admin', 'manager']), getProductsByCategories);
+router.get('/', authenticateToken, requireTenant, requireRole(['vendedor', 'admin', 'manager']), listProducts);
+router.post('/', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateProduct, addProduct); 
+router.patch('/:productId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateProduct, updateProduct);
+router.patch('/:productId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), updateProduct);
+router.delete('/:productId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), removeProduct);
+router.put('/:productId/stock/add', authenticateToken, requireTenant, requireRole(['admin', 'manager']), addStock);
+router.put('/:productId/stock/reduce', authenticateToken, requireTenant, requireRole(['admin', 'manager']), reduceStock);
+router.put('/:productId/stock/set', authenticateToken, requireTenant, requireRole(['admin', 'manager']), setStock);
+router.get('/:productId/stock/history', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getStockHistory);
+router.get('/:productId/stock', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getProductStock);
+router.post('/:productId/variants', authenticateToken, requireTenant, requireRole(['admin', 'manager']), addVariant);
+router.put('/:productId/variants/:variantId/stock/add', authenticateToken, requireTenant, requireRole(['admin', 'manager']), addVariantStock);
+router.put('/:productId/variants/:variantId/disable', authenticateToken, requireTenant, requireRole(['admin', 'manager']), disableVariant);
+router.put('/:productId/variants/:variantId/enable', authenticateToken, requireTenant, requireRole(['admin', 'manager']), enableVariant);
+router.get('/reports/low-stock', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getLowStockProducts);
+router.post('/check-coupon-eligibility', authenticateToken, requireTenant, requireRole(['admin', 'manager']), checkCouponEligibility);
+router.post('/calculate-price-with-coupon', authenticateToken, requireTenant, requireRole(['admin', 'manager']), calculatePriceWithCoupon);
+router.get('/eligible-for-coupons', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getEligibleForCoupons);
+router.post('/by-categories', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getProductsByCategories);
 
 module.exports = router;
