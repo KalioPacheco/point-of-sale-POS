@@ -87,9 +87,25 @@ async function updateProduct(productId, product, companyId = null) {
     minSell = {},
     hasVariants = null,
     variants = null,
-    categories = null
+    categories = null,
+    code,
+    taxRate,
+    taxExempt,
+    disable
   } = product;
 
+  if (code) {
+    founProduct.code = code;
+  }
+  if (taxRate) {
+    founProduct.taxRate = taxRate;
+  }
+  if (taxExempt) {
+    founProduct.taxExempt = taxExempt;
+  }
+  if (disable) {
+    founProduct.disable = disable;
+  }
   if (categories) {
     founProduct.categories = categories;
   }

@@ -83,6 +83,10 @@ const stockHistorySchema = new mongoose.Schema({
 
 const productSchema = new Schema({
   name: String,
+  code: {
+    type: String,
+    index: true,
+  },
   price: Number,
   folio: {
     type: Number,
