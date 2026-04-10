@@ -1,7 +1,6 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
@@ -99,10 +98,10 @@ const removeCustomer = function removeCustomer(req, res) {
   return undefined;
 };
 
-router.get('/', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), listCustomers);
-router.get('/:customerId', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), listCustomers);
-router.post('/', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), validateCustomer, addCustomer);
-router.patch('/:customerId', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), validateCustomer, updateCustomer);
-router.delete('/:customerId', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), removeCustomer);
+router.get('/', authenticateToken, requireRole(allowedRoles), listCustomers);
+router.get('/:customerId', authenticateToken, requireRole(allowedRoles), listCustomers);
+router.post('/', authenticateToken, requireRole(allowedRoles), validateCustomer, addCustomer);
+router.patch('/:customerId', authenticateToken, requireRole(allowedRoles), validateCustomer, updateCustomer);
+router.delete('/:customerId', authenticateToken, requireRole(allowedRoles), removeCustomer);
 
 module.exports = router;

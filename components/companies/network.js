@@ -1,7 +1,6 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
@@ -102,11 +101,11 @@ const removeCompany = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin']), listCompanies);
-router.get('/:companyId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin']), listCompanies);
-router.post('/', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin']), validateCompany, addCompany);
-router.patch('/:companyId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin']), validateCompany, updateCompany);
-router.delete('/:companyId', passportConfig.isAuth,authenticateToken, requireTenant, requireRole(['admin']), removeCompany);
+router.get('/', authenticateToken, requireTenant, requireRole(['admin']), listCompanies);
+router.get('/:companyId', authenticateToken, requireTenant, requireRole(['admin']), listCompanies);
+router.post('/', authenticateToken, requireTenant, requireRole(['admin']), validateCompany, addCompany);
+router.patch('/:companyId', authenticateToken, requireTenant, requireRole(['admin']), validateCompany, updateCompany);
+router.delete('/:companyId', authenticateToken, requireTenant, requireRole(['admin']), removeCompany);
 
 
 module.exports = router;

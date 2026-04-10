@@ -3,8 +3,8 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const { authenticateToken } = require('../../middleware/auth');
 const { validateSale } = require('../../middleware/validation');
 
 const router = express.Router();
@@ -158,12 +158,12 @@ const previewSaleWithCoupon = function previewSaleWithCoupon(req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, listSales);            
-router.get('/:sellId', passportConfig.isAuth, listSales);
-router.post('/', passportConfig.isAuth, validateSale, addSell); 
-router.patch('/:sellId', passportConfig.isAuth, validateSale, updateSell); 
-router.delete('/:sellId', passportConfig.isAuth, removeSell);
-router.post('/validate-coupon', passportConfig.isAuth, validateCoupon);
-router.post('/with-coupon', passportConfig.isAuth, validateSale, addSellWithCoupon);
-router.post('/preview-with-coupon', passportConfig.isAuth, previewSaleWithCoupon);
+router.get('/', authenticateToken, listSales);            
+router.get('/:sellId', authenticateToken, listSales);
+router.post('/', authenticateToken, validateSale, addSell); 
+router.patch('/:sellId', authenticateToken, validateSale, updateSell); 
+router.delete('/:sellId', authenticateToken, removeSell);
+router.post('/validate-coupon', authenticateToken, validateCoupon);
+router.post('/with-coupon', authenticateToken, validateSale, addSellWithCoupon);
+router.post('/preview-with-coupon', authenticateToken, previewSaleWithCoupon);
 module.exports = router;

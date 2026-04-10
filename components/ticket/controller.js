@@ -5,6 +5,46 @@
 const store = require('./store');
 const taxController = require('../taxes/controller'); 
 
+const buildAppliedCoupon = (saleData = {}) => {
+  if (saleData.appliedCoupon && typeof saleData.appliedCoupon === 'object') {
+    return {
+      couponId: saleData.appliedCoupon.couponId || saleData.appliedCoupon.id,
+      code: saleData.appliedCoupon.code || saleData.couponCode || null,
+      name: saleData.appliedCoupon.name || saleData.couponName || null,
+      description: saleData.appliedCoupon.description || saleData.couponDescription || null,
+      discountType: saleData.appliedCoupon.discountType || saleData.couponDiscountType || null,
+      discountValue: saleData.appliedCoupon.discountValue || saleData.couponDiscountValue || null,
+      discountAmount: saleData.appliedCoupon.discountAmount || saleData.couponDiscount || 0
+    };
+  }
+
+  if (!saleData.couponId && !saleData.couponCode) {
+    return null;
+  }
+
+  return {
+    couponId: saleData.couponId,
+    code: saleData.couponCode || null,
+    name: saleData.couponName || null,
+    description: saleData.couponDescription || null,
+    discountType: saleData.couponDiscountType || null,
+    discountValue: saleData.couponDiscountValue || null,
+    discountAmount: saleData.couponDiscount || 0
+  };
+};
+
+const resolveCouponItems = (saleData = {}) => {
+  if (Array.isArray(saleData.items) && saleData.items.length > 0) {
+    return saleData.items;
+  }
+
+  if (Array.isArray(saleData.products) && saleData.products.length > 0) {
+    return saleData.products;
+  }
+
+  return [];
+};
+
 
 const validateTicketData = (ticketData) => {
   const errors = [];
@@ -101,11 +141,18 @@ const calculateItemTaxes = async (items, companyId) => {
 };
 
 
-const createTicketWithCoupon = async (saleData, ticketConfig = {}) => {
+const createTicketWithCoupon = async (saleData, ticketConfig = {}, companyId) => {
   try {
+    const sourceItems = resolveCouponItems(saleData);
+    if (sourceItems.length === 0) {
+      throw new Error('Sale data with products required');
+    }
+
+    const items = saleData.items?.length ? saleData.items : await buildTicketItems(sourceItems);
+    const appliedCoupon = buildAppliedCoupon(saleData);
     const ticketData = {
       ticketType: 'sale',
-      saleId: saleData.id ? new mongoose.Types.ObjectId(saleData.id) : undefined,
+      saleId: saleData.id,
       
       
       storeInfo: {
@@ -128,7 +175,7 @@ const createTicketWithCoupon = async (saleData, ticketConfig = {}) => {
       },
       
 
-      items: await buildTicketItems(saleData.products),
+      items,
       
 
       totals: {
@@ -138,18 +185,10 @@ const createTicketWithCoupon = async (saleData, ticketConfig = {}) => {
         couponDiscount: saleData.couponDiscount || 0,
         couponCode: saleData.couponCode || null,
         couponName: saleData.couponName || null,
-        total: saleData.finalTotal || saleData.total
+        total: saleData.finalTotal || saleData.total || 0
       },
 
-      appliedCoupon: saleData.couponId ? {
-        couponId: saleData.couponId,
-        code: saleData.couponCode,
-        name: saleData.couponName,
-        description: saleData.couponDescription,
-        discountType: saleData.couponDiscountType,
-        discountValue: saleData.couponDiscountValue,
-        discountAmount: saleData.couponDiscount
-      } : null,
+      appliedCoupon,
       
       // Información de pago
       payment: {
@@ -164,17 +203,8 @@ const createTicketWithCoupon = async (saleData, ticketConfig = {}) => {
       company: saleData.company || companyId
     };
   
-    const Model = require('./model'); // eslint-disable-line global-require
-    ticketData.ticketNumber = await Model.generateTicketNumber(
-      'sale', 
-      ticketConfig.cashRegister || 'CAJA-1'
-    );
-    
-
-    const ticket = new Model(ticketData);
-    ticket.calculateTotals();
-    
-    return await ticket.save();
+    validateTicketData(ticketData);
+    return await store.createTicket(ticketData);
     
   } catch (error) {
     throw new Error(`Error creating ticket with coupon: ${error.message}`);
@@ -228,7 +258,7 @@ const processSaleTicketWithCoupon = async (saleData, userId, companyId) => {
       couponDiscount: saleData.couponDiscount || 0,
       couponCode: saleData.couponCode,
       couponName: saleData.couponName,
-      appliedCoupon: saleData.appliedCoupon
+      appliedCoupon: buildAppliedCoupon(saleData)
     };
     
     return store.processSaleTicketWithCoupon(saleDataWithCoupon, userId, companyId);
