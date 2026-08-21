@@ -21,6 +21,29 @@ const mySchema = new Schema({
       lng: String,
     },
   },
+  ticketStoreConfig: {
+    name: {
+      type: String,
+      default: '',
+    },
+    address: {
+      type: String,
+      default: '',
+    },
+    phone: {
+      type: String,
+      default: '',
+    },
+    taxId: {
+      type: String,
+      default: '',
+    },
+    email: {
+      type: String,
+      default: '',
+    },
+    updatedAt: Date,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

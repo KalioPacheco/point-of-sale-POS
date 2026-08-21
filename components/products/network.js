@@ -3,11 +3,11 @@ const express = require('express');
 const mongoose = require('mongoose');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers'); 
 const {
   authenticateToken,
-  requireRole
+  requireRole,
+  requireTenant
 } = require('../../middleware/auth');
 const { validateProduct } = require('../../middleware/validation');
 
@@ -69,7 +69,7 @@ const updateProduct = function updateProduct(req, res) {
   }
   
   controller
-    .updateProduct(productId, product)
+    .updateProduct(productId, product, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -82,8 +82,9 @@ const updateProduct = function updateProduct(req, res) {
 
 const removeProduct = function removeProduct(req, res) {
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   controller
-    .removeProduct(productId)
+    .removeProduct(productId, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -96,6 +97,7 @@ const removeProduct = function removeProduct(req, res) {
 
 const addStock = function addStock(req, res) {
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   const { quantity, reason } = req.body;
 
   const finalReason =
@@ -108,7 +110,7 @@ const addStock = function addStock(req, res) {
   }
 
   controller
-    .addStock(productId, quantity, req.user.userId, finalReason)
+    .addStock(productId, quantity, req.user.userId, finalReason, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -121,6 +123,7 @@ const addStock = function addStock(req, res) {
 
 const reduceStock = function reduceStock(req, res) {
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   const { quantity, reason } = req.body;
 
   const finalReason =
@@ -133,7 +136,7 @@ const reduceStock = function reduceStock(req, res) {
   }
 
   controller
-    .reduceStock(productId, quantity, req.user.userId, finalReason)
+    .reduceStock(productId, quantity, req.user.userId, finalReason, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -147,6 +150,7 @@ const reduceStock = function reduceStock(req, res) {
 
 const setStock = function setStock(req, res) {
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   const { quantity, reason } = req.body;
 
   if (quantity < 0) {
@@ -154,7 +158,7 @@ const setStock = function setStock(req, res) {
   }
 
   controller
-    .setStock(productId, quantity, reason || 'Stock adjustment')
+    .setStock(productId, quantity, reason || 'Stock adjustment', companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -168,9 +172,10 @@ const setStock = function setStock(req, res) {
 
 const getStockHistory = function getStockHistory(req, res) {
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
 
   controller
-    .getStockHistory(productId)
+    .getStockHistory(productId, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -201,9 +206,10 @@ const getLowStockProducts = function getLowStockProducts(req, res) {
 
 const getProductStock = function getProductStock(req, res) {
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
 
   controller
-    .getProductStock(productId)
+    .getProductStock(productId, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -216,6 +222,7 @@ const getProductStock = function getProductStock(req, res) {
 };
 const addVariant = function addVariant(req, res) {
   const { productId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   const variantData = req.body;
 
   if (!variantData.name) {
@@ -223,7 +230,7 @@ const addVariant = function addVariant(req, res) {
   }
 
   controller
-    .addVariant(productId, variantData)
+    .addVariant(productId, variantData, companyId)
     .then(data => {
       response.success(req, res, data, 201);
     })
@@ -237,6 +244,7 @@ const addVariant = function addVariant(req, res) {
 
 const addVariantStock = function addVariantStock(req, res) {
   const { productId, variantId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   const { quantity, reason } = req.body;
 
   const finalReason =
@@ -249,7 +257,7 @@ const addVariantStock = function addVariantStock(req, res) {
   }
 
   controller
-    .addVariantStock(productId, variantId, quantity, req.user.userId, finalReason)
+    .addVariantStock(productId, variantId, quantity, finalReason, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -262,10 +270,11 @@ const addVariantStock = function addVariantStock(req, res) {
 
 const disableVariant = function disableVariant(req, res) {
   const { productId, variantId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   const { reason } = req.body;
 
   controller
-    .disableVariant(productId, variantId, reason || 'Manual disable')
+    .disableVariant(productId, variantId, reason || 'Manual disable', companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -279,10 +288,11 @@ const disableVariant = function disableVariant(req, res) {
 
 const enableVariant = function enableVariant(req, res) {
   const { productId, variantId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   const { reason } = req.body;
 
   controller
-    .enableVariant(productId, variantId, reason || 'Manual enable')
+    .enableVariant(productId, variantId, reason || 'Manual enable', companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -377,24 +387,24 @@ const getProductsByCategories = function getProductsByCategories(req, res) {
 };
 
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['vendedor', 'admin', 'manager']), listProducts);
-router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, addProduct); 
-router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, updateProduct);
-router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), updateProduct);
-router.delete('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), removeProduct);
-router.put('/:productId/stock/add', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), addStock);
-router.put('/:productId/stock/reduce', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), reduceStock);
-router.put('/:productId/stock/set', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), setStock);
-router.get('/:productId/stock/history', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), getStockHistory);
-router.get('/:productId/stock', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), getProductStock);
-router.post('/:productId/variants', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), addVariant);
-router.put('/:productId/variants/:variantId/stock/add', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), addVariantStock);
-router.put('/:productId/variants/:variantId/disable', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), disableVariant);
-router.put('/:productId/variants/:variantId/enable', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), enableVariant);
-router.get('/reports/low-stock', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), getLowStockProducts);
-router.post('/check-coupon-eligibility', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), checkCouponEligibility);
-router.post('/calculate-price-with-coupon', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), calculatePriceWithCoupon);
-router.get('/eligible-for-coupons', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), getEligibleForCoupons);
-router.post('/by-categories', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), getProductsByCategories);
+router.get('/', authenticateToken, requireTenant, requireRole(['vendedor', 'admin', 'manager']), listProducts);
+router.post('/', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateProduct, addProduct); 
+router.patch('/:productId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateProduct, updateProduct);
+router.patch('/:productId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), updateProduct);
+router.delete('/:productId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), removeProduct);
+router.put('/:productId/stock/add', authenticateToken, requireTenant, requireRole(['admin', 'manager']), addStock);
+router.put('/:productId/stock/reduce', authenticateToken, requireTenant, requireRole(['admin', 'manager']), reduceStock);
+router.put('/:productId/stock/set', authenticateToken, requireTenant, requireRole(['admin', 'manager']), setStock);
+router.get('/:productId/stock/history', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getStockHistory);
+router.get('/:productId/stock', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getProductStock);
+router.post('/:productId/variants', authenticateToken, requireTenant, requireRole(['admin', 'manager']), addVariant);
+router.put('/:productId/variants/:variantId/stock/add', authenticateToken, requireTenant, requireRole(['admin', 'manager']), addVariantStock);
+router.put('/:productId/variants/:variantId/disable', authenticateToken, requireTenant, requireRole(['admin', 'manager']), disableVariant);
+router.put('/:productId/variants/:variantId/enable', authenticateToken, requireTenant, requireRole(['admin', 'manager']), enableVariant);
+router.get('/reports/low-stock', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getLowStockProducts);
+router.post('/check-coupon-eligibility', authenticateToken, requireTenant, requireRole(['admin', 'manager']), checkCouponEligibility);
+router.post('/calculate-price-with-coupon', authenticateToken, requireTenant, requireRole(['admin', 'manager']), calculatePriceWithCoupon);
+router.get('/eligible-for-coupons', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getEligibleForCoupons);
+router.post('/by-categories', authenticateToken, requireTenant, requireRole(['admin', 'manager']), getProductsByCategories);
 
 module.exports = router;

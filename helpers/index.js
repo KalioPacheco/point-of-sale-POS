@@ -2,12 +2,13 @@ exports.getCompanyId = req => {
   if (!req || !req.user) {
     return null;
   }
-  
+
   if (req.user.company) {
-    const companyId = req.user.company.toString().split('"')?.[0] || '';
+    const companyRaw = req.user.company;
+    const companyId = typeof companyRaw === 'string' ? companyRaw : companyRaw.toString?.();
     return companyId || null;
   }
-  
+
   return null;
 };
 
