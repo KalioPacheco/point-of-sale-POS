@@ -3,11 +3,20 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
+const { authenticateToken } = require('../../middleware/auth');
 const { validateSale } = require('../../middleware/validation');
 
 const router = express.Router();
+
+const handleSaleError = (req, res, err) => {
+  const message = err && err.message ? err.message : 'Internal error';
+  const isStockConflict =
+    err?.code === 'INSUFFICIENT_STOCK'
+    || /stock insuficiente|insufficient stock/i.test(message);
+
+  response.error(req, res, message, isStockConflict ? 409 : 500, err);
+};
 
 
 
@@ -31,7 +40,7 @@ const addSell = function addSell(req, res) {
       }, 201);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      handleSaleError(req, res, err);
     });
 };
 
@@ -118,7 +127,7 @@ const addSellWithCoupon = function addSellWithCoupon(req, res) {
       }, 201);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      handleSaleError(req, res, err);
     });
 };
 
@@ -143,16 +152,18 @@ const previewSaleWithCoupon = function previewSaleWithCoupon(req, res) {
       response.success(req, res, data, 200);
     })
     .catch(err => {
-      response.error(req, res, 'Internal error', 500, err);
+      const message = err && err.message ? err.message : 'Internal error';
+      const isBusinessValidation = /Cup[oó]n|cupon|m[ií]nima|v[aá]lido|expirad|no encontrado/i.test(message);
+      response.error(req, res, message, isBusinessValidation ? 400 : 500, err);
     });
 };
 
-router.get('/', passportConfig.isAuth, listSales);            
-router.get('/:sellId', passportConfig.isAuth, listSales);
-router.post('/', passportConfig.isAuth, validateSale, addSell); 
-router.patch('/:sellId', passportConfig.isAuth, validateSale, updateSell); 
-router.delete('/:sellId', passportConfig.isAuth, removeSell);
-router.post('/validate-coupon', passportConfig.isAuth, validateCoupon);
-router.post('/with-coupon', passportConfig.isAuth, validateSale, addSellWithCoupon);
-router.post('/preview-with-coupon', passportConfig.isAuth, previewSaleWithCoupon);
+router.get('/', authenticateToken, listSales);            
+router.get('/:sellId', authenticateToken, listSales);
+router.post('/', authenticateToken, validateSale, addSell); 
+router.patch('/:sellId', authenticateToken, validateSale, updateSell); 
+router.delete('/:sellId', authenticateToken, removeSell);
+router.post('/validate-coupon', authenticateToken, validateCoupon);
+router.post('/with-coupon', authenticateToken, validateSale, addSellWithCoupon);
+router.post('/preview-with-coupon', authenticateToken, previewSaleWithCoupon);
 module.exports = router;

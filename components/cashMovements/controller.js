@@ -1,4 +1,8 @@
 const store = require('./store');
+const {
+  CASH_MOVEMENT_TYPES,
+  normalizeCashMovementType,
+} = require('./types');
 
 const validateMovementData = (movementData) => {
   if (!movementData.type) throw new Error('Movement type required');
@@ -7,7 +11,7 @@ const validateMovementData = (movementData) => {
   if (!movementData.userId) throw new Error('User ID required');
   if (movementData.amount <= 0) throw new Error('Amount must be greater than 0');
   
-  const validTypes = ['sale', 'expense', 'withdrawal', 'initial_cash', 'change_denomination', 'refund', 'other'];
+  const validTypes = CASH_MOVEMENT_TYPES;
   if (!validTypes.includes(movementData.type)) {
     throw new Error('Invalid movement type');
   }
@@ -23,11 +27,7 @@ const validateFilters = (filters) => {
 
 module.exports = {
   createMovement(movementData) {
-    if (movementData.type === 'entrada') {
-      movementData.type = 'initial_cash';
-    } else if (movementData.type === 'salida') {
-      movementData.type = 'expense';
-    }
+    movementData.type = normalizeCashMovementType(movementData.type);
 
     validateMovementData(movementData);
     return store.createMovement(movementData);

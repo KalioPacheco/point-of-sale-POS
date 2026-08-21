@@ -138,9 +138,33 @@ async function removeUser(userId, companyId) {
   return sanitizeUser(savedUser);
 }
 
+async function logout(userId) {
+  if (!userId) {
+    throw new Error('Usuario no autenticado');
+  }
+
+  const user = await Model.findById(userId);
+
+  if (!user) {
+    throw new Error('Usuario no encontrado');
+  }
+
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
+  user.updated = true;
+  user.updatedAt = new Date();
+
+  await user.save();
+
+  return {
+    invalidated: true,
+    message: 'Sesión invalidada correctamente',
+  };
+}
+
 module.exports = {
   add: addUser,
   list: listUsers,
   update: updateUser,
   remove: removeUser,
+  logout,
 };

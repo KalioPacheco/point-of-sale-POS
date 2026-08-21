@@ -1,5 +1,90 @@
+const mongoose = require('mongoose');
 const store = require('./store');
 const Model = require('./model');
+
+function isValidSaleObjectId(saleId) {
+  if (saleId == null || saleId === '') return false;
+  try {
+    const oid = new mongoose.Types.ObjectId(saleId);
+    const asStr = typeof saleId === 'string' ? saleId : saleId.toString();
+    return oid.toString() === asStr.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mapea snapshots de venta al formato esperado por calculateDiscount (price × quantity por ítem).
+ */
+function mapSaleProductsForCouponDiscount(productSnapshots) {
+  if (!productSnapshots || !productSnapshots.length) return [];
+  return productSnapshots.map((p) => ({
+    productId: p.productId,
+    quantity: p.quantity || 1,
+    price: p.priceSnapshot ? p.priceSnapshot.price : p.price
+  }));
+}
+
+/**
+ * Registra el uso del cupón en BD solo cuando la venta ya existe (saleId real).
+ * Idempotente: si usageHistory ya incluye este saleId, no duplica.
+ */
+async function recordCouponUsageForCompletedSale({
+  couponId,
+  couponCode,
+  companyId,
+  saleId,
+  subtotal,
+  total,
+  products,
+  customerId = null,
+  customerPhone,
+  customerEmail
+}) {
+  try {
+    if (!couponId || !couponCode || !companyId || !saleId) {
+      throw new Error('Datos incompletos para registrar uso del cupón');
+    }
+    if (!isValidSaleObjectId(saleId)) {
+      throw new Error('saleId debe ser un ObjectId de venta persistida');
+    }
+
+    const coupon = await Model.findById(couponId);
+    if (!coupon || String(coupon.company) !== String(companyId)) {
+      throw new Error('Cupón no encontrado');
+    }
+    if (coupon.code.toUpperCase() !== String(couponCode).toUpperCase()) {
+      throw new Error('El cupón no coincide con la venta');
+    }
+
+    const saleIdStr = String(saleId);
+    const alreadyRecorded = coupon.usageHistory.some(
+      (u) => u.saleId && String(u.saleId) === saleIdStr
+    );
+    if (alreadyRecorded) {
+      return { recorded: false, skipped: true };
+    }
+
+    const saleData = {
+      saleId,
+      subtotal,
+      total,
+      products,
+      customerPhone,
+      customerEmail
+    };
+
+    const validation = coupon.isValidForSale(saleData, customerId);
+    if (!validation.valid) {
+      throw new Error(validation.errors.join(', '));
+    }
+
+    await coupon.recordUsage(saleData, customerId);
+    return { recorded: true };
+  } catch (error) {
+    return Promise.reject(new Error(`Error registrando uso del cupón: ${error.message}`));
+  }
+}
 
 
 function addCoupon(couponData) {
@@ -92,6 +177,13 @@ async function applyCoupon(couponCode, companyId, saleData, customerId = null) {
       return {
         success: false,
         error: validation.error
+      };
+    }
+
+    if (!saleData || !isValidSaleObjectId(saleData.saleId)) {
+      return {
+        success: false,
+        error: 'Se requiere saleId (ObjectId) de una venta ya persistida para registrar el uso del cupón'
       };
     }
 
@@ -252,6 +344,8 @@ module.exports = {
   removeCoupon,
   validateCoupon,
   applyCoupon,
+  recordCouponUsageForCompletedSale,
+  mapSaleProductsForCouponDiscount,
   searchCoupons,
   getActiveCoupons,
   getCouponsForCashier,

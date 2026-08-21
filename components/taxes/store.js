@@ -21,9 +21,13 @@ async function listTaxConfigs(companyId) {
   }
 }
 
-async function getTaxConfig(taxConfigId) {
+async function getTaxConfig(taxConfigId, companyId) {
   try {
-    const taxConfig = await TaxConfig.findById(taxConfigId).populate('createdBy', 'name');
+    const taxConfig = await TaxConfig.findOne({
+      _id: taxConfigId,
+      company: companyId,
+      isActive: true,
+    }).populate('createdBy', 'name');
     if (!taxConfig) {
       throw new Error('Tax configuration not found');
     }
@@ -33,11 +37,11 @@ async function getTaxConfig(taxConfigId) {
   }
 }
 
-async function updateTaxConfig(taxConfigId, updateData) {
+async function updateTaxConfig(taxConfigId, updateData, companyId) {
   try {
     const updatedData = { ...updateData, updatedAt: new Date() };
-    const updatedConfig = await TaxConfig.findByIdAndUpdate(
-      taxConfigId,
+    const updatedConfig = await TaxConfig.findOneAndUpdate(
+      { _id: taxConfigId, company: companyId, isActive: true },
       updatedData,
       { new: true }
     ).populate('createdBy', 'name');
@@ -51,10 +55,10 @@ async function updateTaxConfig(taxConfigId, updateData) {
   }
 }
 
-async function removeTaxConfig(taxConfigId) {
+async function removeTaxConfig(taxConfigId, companyId) {
   try {
-    const removedConfig = await TaxConfig.findByIdAndUpdate(
-      taxConfigId,
+    const removedConfig = await TaxConfig.findOneAndUpdate(
+      { _id: taxConfigId, company: companyId, isActive: true },
       { isActive: false, updatedAt: new Date() },
       { new: true }
     );

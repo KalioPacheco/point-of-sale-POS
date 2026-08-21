@@ -1,11 +1,11 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
-  requireRole
+  requireRole,
+  requireTenant
 } = require('../../middleware/auth');
 const { validateBrand } = require('../../middleware/validation');
 
@@ -15,7 +15,9 @@ const router = express.Router();
 const addBrand = function addBrand(req, res) {
   const brand = req.body;
   const companyId = Helper.getCompanyId(req);
-  brand.companyId = companyId;
+  delete brand.companyId;
+  delete brand.company;
+  brand.company = companyId;
   controller
     .addBrand(brand)
     .then(data => {
@@ -43,9 +45,10 @@ const updateBrand = function updateBrand(req, res) {
   const { brandId } = req.params;
   const brand = req.body;
   const companyId = Helper.getCompanyId(req);
-  brand.companyId = companyId;
+  delete brand.companyId;
+  delete brand.company;
   controller
-    .updateBrand(brandId, brand)
+    .updateBrand(brandId, brand, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -56,8 +59,9 @@ const updateBrand = function updateBrand(req, res) {
 
 const removeBrand = function removeBrand(req, res) {
   const { brandId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   controller
-    .removeBrand(brandId)
+    .removeBrand(brandId, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -67,10 +71,10 @@ const removeBrand = function removeBrand(req, res) {
 };
 
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), lisBrands);
-router.get('/:brandId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), lisBrands);
-router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateBrand, addBrand);
-router.patch('/:brandId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateBrand, updateBrand);
-router.delete('/:brandId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), removeBrand);
+router.get('/', authenticateToken, requireTenant, requireRole(['admin', 'manager']), lisBrands);
+router.get('/:brandId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), lisBrands);
+router.post('/', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateBrand, addBrand);
+router.patch('/:brandId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateBrand, updateBrand);
+router.delete('/:brandId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), removeBrand);
 
 module.exports = router;

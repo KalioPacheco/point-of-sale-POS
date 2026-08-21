@@ -1,6 +1,6 @@
 const store = require('./store');
 
-async function deductInventoryFromSale(products, saleId) {
+async function deductInventoryFromSale(products, saleId, companyId = null) {
   if (!products || !Array.isArray(products) || products.length === 0) {
     return;
   }
@@ -13,19 +13,80 @@ async function deductInventoryFromSale(products, saleId) {
       const { productId, quantity: qty } = item;
       const quantity = qty || 1;
       if (!productId || quantity < 1) return null;
-      const stockInfo = await productsController.getProductStock(productId);
+      const stockInfo = await productsController.getProductStock(productId, companyId);
       if (stockInfo.hasVariants) return null;
       return { productId, quantity };
     })
   );
 
-  await Promise.all(
-    itemsToDeduct
-      .filter(Boolean)
-      .map(({ productId, quantity }) =>
-        productsController.reduceStock(productId, quantity, reason)
-      )
-  );
+  const deductedItems = [];
+
+  try {
+    // Evita deducciones parciales si uno de los productos falla por stock.
+    // eslint-disable-next-line no-restricted-syntax
+    for (const item of itemsToDeduct.filter(Boolean)) {
+      await productsController.reduceStock(
+        item.productId,
+        item.quantity,
+        null,
+        reason,
+        companyId
+      );
+
+      deductedItems.push(item);
+    }
+  } catch (error) {
+    // Reversa deducciones aplicadas antes del fallo para mantener consistencia.
+    await Promise.all(
+      deductedItems.map(async ({ productId, quantity }) => {
+        try {
+          await productsController.addStock(
+            productId,
+            quantity,
+            null,
+            `Rollback por falla de inventario en venta ${saleId}`,
+            companyId
+          );
+        } catch (rollbackError) {
+          console.error(
+            `[inventory-rollback-error] productId=${productId} saleId=${saleId} error=${rollbackError.message}`
+          );
+        }
+      })
+    );
+
+    throw error;
+  }
+}
+
+/**
+ * Devuelve inventario descontado en una venta (compensación si falla el cupón tras persistir la venta).
+ */
+async function restoreInventoryFromSale(products, saleId, companyId = null) {
+  if (!products || !Array.isArray(products) || products.length === 0) {
+    return;
+  }
+
+  const productsController = require('../products/controller'); // eslint-disable-line global-require
+  const reason = `Rollback compensación tras error de cupón en venta ${saleId}`;
+
+  // eslint-disable-next-line no-restricted-syntax
+  for (const item of products) {
+    const { productId, quantity: qty } = item;
+    const quantity = qty || 1;
+    if (!productId || quantity < 1) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const stockInfo = await productsController.getProductStock(productId, companyId);
+    if (stockInfo.hasVariants) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await productsController.addStock(
+      productId,
+      quantity,
+      null,
+      reason,
+      companyId
+    );
+  }
 }
 
 async function validateSaleStock(products) {
@@ -212,19 +273,18 @@ async function processSaleWithCoupon(saleData) {
       const saleForCoupon = {
         subtotal: taxCalculation.subtotal,
         total: taxCalculation.total,
-        products: saleData.products,
-        saleId: saleData.id || 'temp'
+        products: saleData.products
       };
       
-      couponResult = await couponsController.applyCoupon(
+      couponResult = await couponsController.validateCoupon(
         saleData.couponCode,
         saleData.companyId,
         saleForCoupon,
         saleData.customerId
       );
       
-      if (!couponResult.success) {
-        return Promise.reject(new Error(couponResult.error));
+      if (!couponResult.valid) {
+        return Promise.reject(new Error(couponResult.error || 'Cupón no válido'));
       }
     }
     
@@ -288,8 +348,6 @@ async function addSell(sell, idempotencyKey) {
     }
     const processedSale = await processSaleWithCoupon(sell);
 
-    await validateSaleStock(processedSale.products);
-
     const saleWithKey = {
       ...processedSale,
       idempotencyKey
@@ -298,18 +356,48 @@ async function addSell(sell, idempotencyKey) {
     const newSale = await store.add(saleWithKey);
 
     try {
-      await deductInventoryFromSale(newSale.products, newSale.id);
+      await deductInventoryFromSale(newSale.products, newSale.id, sell.companyId);
     } catch (inventoryError) {
       await store.remove(newSale.id);
-      return Promise.reject(new Error(
+      const saleError = new Error(
         `Error al descontar inventario: ${inventoryError.message}. La venta fue revertida.`
-      ));
+      );
+      saleError.code = inventoryError.code;
+      return Promise.reject(saleError);
+    }
+
+    if (newSale.couponCode && newSale.couponId) {
+      const couponsController = require('../coupons/controller'); // eslint-disable-line global-require
+      try {
+        const mappedProducts = couponsController.mapSaleProductsForCouponDiscount(newSale.products);
+        await couponsController.recordCouponUsageForCompletedSale({
+          couponId: newSale.couponId,
+          couponCode: newSale.couponCode,
+          companyId: sell.companyId,
+          saleId: newSale.id,
+          subtotal: newSale.subtotal,
+          total: newSale.total,
+          products: mappedProducts,
+          customerId: sell.customerId ?? null,
+          customerPhone: sell.customerPhone,
+          customerEmail: sell.customerEmail
+        });
+      } catch (couponError) {
+        await restoreInventoryFromSale(newSale.products, newSale.id, sell.companyId);
+        await store.remove(newSale.id);
+        const saleError = new Error(
+          `Error al registrar cupón: ${couponError.message}. La venta fue revertida.`
+        );
+        return Promise.reject(saleError);
+      }
     }
 
     return newSale;
 
   } catch (error) {
-    return Promise.reject(new Error(`Error adding sale: ${error.message}`));
+    const wrappedError = new Error(`Error adding sale: ${error.message}`);
+    wrappedError.code = error.code;
+    return Promise.reject(wrappedError);
   }
   
 }
