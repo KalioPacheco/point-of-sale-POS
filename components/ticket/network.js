@@ -8,9 +8,16 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
-const { validateTicket } = require('../../middleware/validation');
+const Ticket = require('./model');
+const Sale = require('../sales/model');
+const Cut = require('../cashRegisterCuts/model');
+const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
 
 const router = express.Router();
+const scopeTicket = scopeResource(Ticket, 'ticketId');
+const scopeSale = scopeResource(Sale, 'saleId');
+const scopeCut = scopeResource(Cut, 'cutId');
+router.use(passportConfig.isAuth, authenticateToken, requireCompanyScope);
 
 
 
@@ -28,13 +35,37 @@ const validateId = (field, message) => (req, res, next) => {
   return next();
 };
 
+const legacyTicketCreationDisabled = (req, res) => response.error(
+  req,
+  res,
+  'Manual ticket creation is disabled; use sale, refund or cash cut flows',
+  410
+);
+
+const requireOwnSaleForSeller = (req, res, next) => {
+  if (req.user.role !== 'vendedor') return next();
+  if (String(req.scopedResource?.createdBy) !== String(Helper.getUserId(req))) {
+    return response.error(req, res, 'Sale not found', 404);
+  }
+  return next();
+};
+
+const requireOwnTicketForSeller = (req, res, next) => {
+  if (req.user.role !== 'vendedor') return next();
+  const cashierId = req.scopedResource?.transactionInfo?.cashier?.id;
+  if (String(cashierId) !== String(Helper.getUserId(req))) {
+    return response.error(req, res, 'Ticket not found', 404);
+  }
+  return next();
+};
+
 
 router.get('/store-config', passportConfig.isAuth, (req, res) => {
   const companyId = Helper.getCompanyId(req);
   return handleRequest(req, res, controller.getStoreInfo(companyId));
 });
 
-router.put('/store-config', passportConfig.isAuth, (req, res) => {
+router.put('/store-config', passportConfig.isAuth, requireRole(['admin', 'manager']), (req, res) => {
   const storeInfo = req.body;
   const companyId = Helper.getCompanyId(req);
 
@@ -47,7 +78,7 @@ router.put('/store-config', passportConfig.isAuth, (req, res) => {
 
 
 
-router.post('/calculate-taxes', passportConfig.isAuth, (req, res) => {
+router.post('/calculate-taxes', passportConfig.isAuth, requireRole(['admin', 'manager']), (req, res) => {
   const { items } = req.body;
   const companyId = Helper.getCompanyId(req);
 
@@ -58,7 +89,7 @@ router.post('/calculate-taxes', passportConfig.isAuth, (req, res) => {
   return handleRequest(req, res, controller.calculateTicketTaxes(items, companyId));
 });
 
-router.get('/reports/taxes', passportConfig.isAuth, (req, res) => {
+router.get('/reports/taxes', passportConfig.isAuth, requireRole(['admin', 'manager']), (req, res) => {
   const { startDate, endDate } = req.query;
   const companyId = Helper.getCompanyId(req);
 
@@ -71,76 +102,26 @@ router.get('/reports/taxes', passportConfig.isAuth, (req, res) => {
 
 
 
-router.post('/with-taxes', passportConfig.isAuth, (req, res) => {
-  const ticketData = { 
-    ...req.body, 
-    companyId: Helper.getCompanyId(req) !== 'default-company-id' ? Helper.getCompanyId(req) : undefined
-  };
-  return handleRequest(req, res, controller.createTicketWithTaxes(ticketData));
-});
+router.post('/with-taxes', legacyTicketCreationDisabled);
 
-router.post('/from-sale-with-taxes/:saleId?', passportConfig.isAuth, (req, res) => {
-  const saleId = req.params.saleId || req.body.saleId;
-  const userId = req.body.userId || Helper.getUserId(req);
-  const companyId = req.body.companyId || Helper.getCompanyId(req);
+router.post('/from-sale-with-taxes/:saleId?', legacyTicketCreationDisabled);
 
-  if (!saleId) {
-    return response.error(req, res, 'Sale ID required', 400);
-  }
-
-  return handleRequest(req, res, controller.createTicketFromSaleWithTaxes(saleId, userId, companyId));
-});
-
-router.post('/process-sale-with-taxes', passportConfig.isAuth, (req, res) => {
-  const saleData = req.body;
-  const userId = Helper.getUserId(req);
-  const companyId = Helper.getCompanyId(req);
-  return handleRequest(req, res, controller.processSaleTicketWithTaxes(saleData, userId, companyId));
-});
+router.post('/process-sale-with-taxes', legacyTicketCreationDisabled);
 
 
 
-router.post('/with-coupon', passportConfig.isAuth, (req, res) => {
-  const saleData = req.body;
-  const ticketConfig = {
-    cashierName: req.user?.name || 'Cajero',
-    cashRegister: req.body.cashRegister || 'CAJA-1',
-    storeName: req.body.storeName || 'Mi Tienda',
-    storeAddress: req.body.storeAddress || '',
-    storePhone: req.body.storePhone || '',
-    storeTaxId: req.body.storeTaxId || '',
-    storeEmail: req.body.storeEmail || ''
-  };
-  
-  return handleRequest(req, res, controller.createTicketWithCoupon(saleData, ticketConfig));
-});
+router.post('/with-coupon', legacyTicketCreationDisabled);
 
-router.post('/process-sale-with-coupon', passportConfig.isAuth, (req, res) => {
-  const saleData = req.body;
-  const userId = Helper.getUserId(req);
-  const companyId = Helper.getCompanyId(req);
-  
-  return handleRequest(req, res, controller.processSaleTicketWithCoupon(saleData, userId, companyId));
-});
+router.post('/process-sale-with-coupon', legacyTicketCreationDisabled);
 
 
 
-router.post('/from-sale/:saleId?', passportConfig.isAuth, (req, res) => {
-  const saleId = req.params.saleId || req.body.saleId;
-  const userId = req.body.userId || Helper.getUserId(req);
-  const companyId = req.body.companyId || Helper.getCompanyId(req);
+router.post('/from-sale/:saleId?', legacyTicketCreationDisabled);
 
-  if (!saleId) {
-    return response.error(req, res, 'Sale ID required', 400);
-  }
-
-  return handleRequest(req, res, controller.createTicketFromSale(saleId, userId, companyId));
-});
-
-router.post('/from-cut/:cutId?', passportConfig.isAuth, (req, res) => {
+router.post('/from-cut/:cutId?', requireRole(['admin', 'manager']), scopeCut, (req, res) => {
   const cutId = req.params.cutId || req.body.cutId;
-  const userId = req.body.userId || Helper.getUserId(req);
-  const companyId = req.body.companyId || Helper.getCompanyId(req);
+  const userId = Helper.getUserId(req);
+  const companyId = Helper.getCompanyId(req);
 
   if (!cutId) {
     return response.error(req, res, 'Cut ID required', 400);
@@ -149,14 +130,9 @@ router.post('/from-cut/:cutId?', passportConfig.isAuth, (req, res) => {
   return handleRequest(req, res, controller.createTicketFromCut(cutId, userId, companyId));
 });
 
-router.post('/process-sale', passportConfig.isAuth, (req, res) => {
-  const saleData = req.body;
-  const userId = Helper.getUserId(req);
-  const companyId = Helper.getCompanyId(req);
-  return handleRequest(req, res, controller.processSaleTicket(saleData, userId, companyId));
-});
+router.post('/process-sale', legacyTicketCreationDisabled);
 
-router.post('/process-refund', passportConfig.isAuth, (req, res) => {
+router.post('/process-refund', passportConfig.isAuth, requireRole(['admin', 'manager']), (req, res) => {
   const refundData = req.body;
   const userId = Helper.getUserId(req);
   const companyId = Helper.getCompanyId(req);
@@ -165,7 +141,7 @@ router.post('/process-refund', passportConfig.isAuth, (req, res) => {
 
 
 
-router.get('/stats', passportConfig.isAuth, (req, res) => {
+router.get('/stats', passportConfig.isAuth, requireRole(['admin', 'manager']), (req, res) => {
   const filters = { 
     ...req.query, 
     companyId: Helper.getCompanyId(req) 
@@ -175,12 +151,12 @@ router.get('/stats', passportConfig.isAuth, (req, res) => {
 
 
 
-router.get('/:ticketId/data', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+router.get('/:ticketId/data', passportConfig.isAuth, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   return handleRequest(req, res, controller.generateTicketData(ticketId));
 });
 
-router.get('/:ticketId/pdf', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+router.get('/:ticketId/pdf', passportConfig.isAuth, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   const format = req.query.format || '80mm';
 
@@ -198,13 +174,13 @@ router.get('/:ticketId/pdf', passportConfig.isAuth, validateId('ticketId'), (req
     });
 });
 
-router.get('/:ticketId/receipt-with-coupon', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+router.get('/:ticketId/receipt-with-coupon', passportConfig.isAuth, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   
   return handleRequest(req, res, controller.generateTicketReceiptWithCoupon(ticketId));
 });
 
-router.get('/:ticketId/coupon-template', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+router.get('/:ticketId/coupon-template', passportConfig.isAuth, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   
   controller.getTicketById(ticketId)
@@ -217,13 +193,13 @@ router.get('/:ticketId/coupon-template', passportConfig.isAuth, validateId('tick
 
 
 
-router.post('/:ticketId/reprint', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+router.post('/:ticketId/reprint', passportConfig.isAuth, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   const userId = Helper.getUserId(req);
   return handleRequest(req, res, controller.reprintTicket(ticketId, userId));
 });
 
-router.post('/:ticketId/cancel', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+router.post('/:ticketId/cancel', passportConfig.isAuth, requireRole(['admin', 'manager']), validateId('ticketId'), scopeTicket, (req, res) => {
   const { ticketId } = req.params;
   const { reason } = req.body;
   const userId = Helper.getUserId(req);
@@ -232,7 +208,12 @@ router.post('/:ticketId/cancel', passportConfig.isAuth, validateId('ticketId'), 
     return response.error(req, res, 'Reason required', 400);
   }
 
-  return handleRequest(req, res, controller.cancelTicket(ticketId, reason, userId));
+  return handleRequest(req, res, controller.cancelTicket(
+    ticketId,
+    reason,
+    userId,
+    Helper.getCompanyId(req)
+  ));
 });
 
 router.get('/:saleId', passportConfig.isAuth, validateId('saleId'), (req, res, next) => {
@@ -249,35 +230,29 @@ router.get('/:saleId', passportConfig.isAuth, validateId('saleId'), (req, res, n
     return response.error(req, res, 'Invalid format. Use: 58mm or 80mm', 400);
   }
 
-  return store.generateTicketPDFFromSale(
-    saleId,
-    format,
-    res,
-    Helper.getUserId(req),
-    Helper.getCompanyId(req)
-  ).catch(err => {
-    console.error('Sale PDF error:', err);
-    if (!res.headersSent) {
-      return response.error(req, res, err.message || 'PDF error', 500);
-    }
-    return undefined;
-  });
+  return scopeSale(req, res, () => requireOwnSaleForSeller(req, res, () => store.generateTicketPDFFromSale(
+      saleId,
+      format,
+      res,
+      Helper.getUserId(req),
+      Helper.getCompanyId(req)
+    ).catch(err => {
+      console.error('Sale PDF error:', err);
+      if (!res.headersSent) {
+        return response.error(req, res, err.message || 'PDF error', 500);
+      }
+      return undefined;
+    })));
 });
 
 
 
-router.get('/:ticketId', passportConfig.isAuth, validateId('ticketId'), (req, res) => {
+router.get('/:ticketId', passportConfig.isAuth, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   return handleRequest(req, res, controller.getTicketById(ticketId));
 });
 
-router.post('/', passportConfig.isAuth, validateTicket, (req, res) => {
-  const ticketData = { 
-    ...req.body, 
-    companyId: Helper.getCompanyId(req) !== 'default-company-id' ? Helper.getCompanyId(req) : undefined
-  };
-  return handleRequest(req, res, controller.createTicket(ticketData));
-});
+router.post('/', legacyTicketCreationDisabled);
 
 router.get('/', passportConfig.isAuth, requireRole(['admin', 'manager']), (req, res) => {
   const filters = { 
@@ -338,7 +313,7 @@ router.get('/system/config', passportConfig.isAuth, (req, res) => {
   }, 200);
 });
 
-router.post('/demo/sale-with-taxes', passportConfig.isAuth, (req, res) => {
+router.post('/demo/sale-with-taxes', legacyTicketCreationDisabled, (req, res) => {
   const companyId = Helper.getCompanyId(req);
 
   const demoSaleData = {
@@ -377,7 +352,7 @@ router.post('/demo/sale-with-taxes', passportConfig.isAuth, (req, res) => {
 });
 
 
-router.post('/demo/sale-with-coupon', passportConfig.isAuth, (req, res) => {
+router.post('/demo/sale-with-coupon', legacyTicketCreationDisabled, (req, res) => {
   const companyId = Helper.getCompanyId(req);
 
   const demoSaleWithCoupon = {

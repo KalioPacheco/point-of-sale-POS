@@ -1,4 +1,10 @@
 const mongoose = require('mongoose');
+const {
+  Counter,
+  companyToken,
+  counterKey,
+  formatSequence
+} = require('../operationalCounters/model');
 
 const { Schema } = mongoose;
 
@@ -33,7 +39,7 @@ const cashMovementSchema = new Schema({
 
   paymentMethod: { 
     type: String, 
-    enum: ['cash', 'card', 'mixed'],
+    enum: ['cash', 'card', 'transfer', 'mixed'],
     default: 'cash'
   },
   
@@ -55,6 +61,7 @@ const cashMovementSchema = new Schema({
     type: Schema.ObjectId, 
     ref: 'Sales' 
   },
+  shift: { type: Schema.ObjectId, ref: 'CashRegisterShifts' },
   
 
   receiptNumber: String,
@@ -80,23 +87,25 @@ const cashMovementSchema = new Schema({
   timestamps: true 
 });
 
-cashMovementSchema.statics.generateMovementNumber = async function generateMovementNumber() {
+cashMovementSchema.statics.generateMovementNumber = async function generateMovementNumber(
+  company,
+  cashRegister = 'GLOBAL',
+  session = null
+) {
+  if (!company) throw new Error('Company is required to generate a movement number');
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-  const prefix = `MOV-${dateStr}`;
+  const prefix = `MOV-${companyToken(company)}-${dateStr}`;
   
   const lastMovement = await this.findOne({
+    company,
     movementNumber: { $regex: `^${prefix}` }
-  }).sort({ movementNumber: -1 });
-  
-  let sequence = 1;
-  if (lastMovement && lastMovement.movementNumber) {
-    const parts = lastMovement.movementNumber.split('-');
-    const lastSequence = parseInt(parts[parts.length - 1], 10) || 0;
-    sequence = lastSequence + 1;
-  }
-  
-  return `${prefix}-${sequence.toString().padStart(4, '0')}`;
+  }).sort({ movementNumber: -1 }).session(session).lean();
+  const baseline = Number(lastMovement?.movementNumber?.split('-').pop()) || 0;
+  const sequence = await Counter.next(counterKey({
+    kind: 'movement', company, cashRegister, date: dateStr
+  }), baseline, session);
+  return formatSequence(prefix, sequence, 4);
 };
 
 cashMovementSchema.methods.getMovementSign = function getMovementSign() {

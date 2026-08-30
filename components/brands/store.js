@@ -10,7 +10,7 @@ async function listBrands(brandId, companyId) {
   const filter = {};
   
   if (brandId) {
-    filter.id = brandId;
+    filter._id = brandId;
   }
 
   if (companyId && companyId !== 'default-company-id') {

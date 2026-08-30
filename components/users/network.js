@@ -12,6 +12,7 @@ const {
   validateUserUpdate
 } = require('../../middleware/validation');
 const router = express.Router();
+const { loginRateLimit } = require('../../middleware/rateLimit');
 
 const addUser = function (req, res) {
   const user = req.body;
@@ -96,8 +97,8 @@ const removeUser = function (req, res) {
 router.get('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listUsers);
 router.get('/:userId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listUsers);
 router.post('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserCreate, addUser);
-router.post('/login', controller.login);
-router.post('/register', passportConfig.isAuth, authenticateToken, requireRole(['admin']), controller.register);
+router.post('/login', loginRateLimit, controller.login);
+router.post('/register', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserCreate, controller.register);
 router.post('/logout', passportConfig.isAuth, authenticateToken, logout);
 router.patch('/:userId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserUpdate, updateUser);
 router.delete('/:userId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), removeUser);

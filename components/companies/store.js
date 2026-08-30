@@ -39,22 +39,19 @@ async function updateCompany(companyId, type) {
     throw new Error('Empresa no encontrada');
   }
 
-  const { name = '', address = {} } = type;
+  const { name, rfc, address, disable } = type;
 
-  if (name) {
+  if (name !== undefined) {
     foundBrand.name = name;
   }
-  if (address) {
+  if (rfc !== undefined) foundBrand.rfc = rfc;
+  if (typeof disable === 'boolean') foundBrand.disable = disable;
+  if (address !== undefined) {
     foundBrand.address = {
-      ...foundBrand.address,
-      number: {
-        ...foundBrand.address.number,
-        ...address.number,
-      },
-      geoPoint: {
-        ...foundBrand.address.geoPoint,
-        ...address.geoPoint,
-      },
+      ...(foundBrand.address?.toObject?.() || foundBrand.address || {}),
+      ...address,
+      number: { ...(foundBrand.address?.number || {}), ...(address.number || {}) },
+      geoPoint: { ...(foundBrand.address?.geoPoint || {}), ...(address.geoPoint || {}) },
     };
   }
 

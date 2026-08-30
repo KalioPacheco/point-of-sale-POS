@@ -7,7 +7,7 @@ const {
   authenticateToken,
   requireRole,
 } = require('../../middleware/auth');
-const { validateCustomer } = require('../../middleware/validation');
+const { validateCustomerCreate, validateCustomerUpdate } = require('../../middleware/validation');
 
 const router = express.Router();
 
@@ -101,8 +101,14 @@ const removeCustomer = function removeCustomer(req, res) {
 
 router.get('/', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), listCustomers);
 router.get('/:customerId', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), listCustomers);
-router.post('/', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), validateCustomer, addCustomer);
-router.patch('/:customerId', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), validateCustomer, updateCustomer);
-router.delete('/:customerId', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), removeCustomer);
+router.post('/', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), validateCustomerCreate, addCustomer);
+router.patch('/:customerId', passportConfig.isAuth, authenticateToken, requireRole(allowedRoles), validateCustomerUpdate, updateCustomer);
+router.delete(
+  '/:customerId',
+  passportConfig.isAuth,
+  authenticateToken,
+  requireRole(['admin', 'manager']),
+  removeCustomer
+);
 
 module.exports = router;

@@ -1,0 +1,48 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-and-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      DB_CONECTION_DEV: mongodb://127.0.0.1:27017/pos_ci?replicaSet=rs0
+      JWT_SECRET: ci-only-jwt-secret-with-at-least-thirty-two-characters
+      SECRET_KEY_SESSION: ci-only-session-secret-with-at-least-thirty-two-characters
+      CORS_ORIGINS: http://localhost:5173
+      MIGRATION_CONFIRM_DB: pos_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Start MongoDB replica set
+        run: |
+          docker run --name mongo-rs -d -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          until docker exec mongo-rs mongosh --quiet --eval "db.adminCommand('ping').ok" | grep 1; do sleep 2; done
+          docker exec mongo-rs mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})"
+          until docker exec mongo-rs mongosh --quiet --eval "db.hello().isWritablePrimary" | grep true; do sleep 2; done
+
+      - run: npm run migrate:plan
+      - run: npm run migrate:up -- --apply
+      - run: npm run migrate:status
+      - run: npm run test:e2e

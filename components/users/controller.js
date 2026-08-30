@@ -2,6 +2,7 @@ const store = require('./store');
 const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const Users = require('./model');
+const { clearLoginAttempts } = require('../../middleware/rateLimit');
 
 function addUser(user) {
   if (!user) {
@@ -26,6 +27,7 @@ function login(req, res, next) {
     }
     
     try {
+      clearLoginAttempts(req);
       const payload = {
         userId: user._id,
         userName: user.userName,
@@ -37,7 +39,7 @@ function login(req, res, next) {
       const token = jwt.sign(
         payload,
         process.env.JWT_SECRET,
-        { expiresIn: '24h' }
+        { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
       );
       
       return res.status(200).json({
@@ -67,8 +69,18 @@ function login(req, res, next) {
   })(req, res, next);
 }
 
-function register(req, res, next) {
+function register(req, res) {
   const { userName, password, name, lastNames, role } = req.body;
+  const company = req.user?.company;
+  const createdBy = req.user?._id || req.user?.userId || req.user?.id;
+
+  if (!company) {
+    return res.status(403).json({
+      success: false,
+      message: 'Company scope is required',
+      code: 'COMPANY_SCOPE_REQUIRED'
+    });
+  }
 
  
   const newUser = new Users({
@@ -76,7 +88,9 @@ function register(req, res, next) {
     password, 
     name,
     lastNames,
-    role
+    role,
+    company,
+    createdBy
   });
 
   newUser.save()
@@ -92,7 +106,7 @@ function register(req, res, next) {
       const token = jwt.sign(
         payload,
         process.env.JWT_SECRET,
-        { expiresIn: '24h' }
+        { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
       );
       
       return res.status(201).json({

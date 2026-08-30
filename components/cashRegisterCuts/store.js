@@ -1,9 +1,23 @@
 const PDFDocument = require('pdfkit');
 const Model = require('./model');
 const UsersModel = require('../users/model');
+const CashRegisterShift = require('../cashRegisterShifts/model');
 
 
 async function createCashRegisterCut(cutData) {
+  const shift = await CashRegisterShift.findOne({
+    _id: cutData.shiftId,
+    company: cutData.companyId,
+    cashRegister: cutData.cashRegister,
+    status: { $in: ['open', 'closed'] },
+    cutStatus: { $ne: 'completed' }
+  });
+  if (!shift) throw new Error('Shift pending cut not found for this cash register');
+  cutData.cashierId = shift.cashier;
+  const actualCash = shift.status === 'closed' ? shift.closingCash : cutData.actualCash;
+  if (!Number.isFinite(actualCash) || actualCash < 0) {
+    throw new Error('Actual cash is required to complete the cut');
+  }
   
 // 🔒 VALIDAR SI YA EXISTE CORTE HOY
 
@@ -15,10 +29,8 @@ todayEnd.setHours(23, 59, 59, 999);
 
 const existingCut = await Model.findOne({
   cashRegister: cutData.cashRegister,
-  createdAt: {
-    $gte: todayStart,
-    $lte: todayEnd
-  },
+  company: cutData.companyId,
+  shift: cutData.shiftId,
   disable: false
 });
 
@@ -26,35 +38,47 @@ if (existingCut) {
   throw new Error('Ya existe un corte de caja para hoy en esta caja');
 }
 
-  const admin = await UsersModel.findById(cutData.administratorId);
-  if (!admin?.privileges?.full) throw new Error('User does not have administrator privileges');
+  const admin = await UsersModel.findOne({
+    _id: cutData.administratorId,
+    company: cutData.companyId,
+    disable: false
+  });
+  if (!admin || !['admin', 'manager'].includes(admin.role)) {
+    throw new Error('User does not have administrator privileges');
+  }
 
  
-  const cashier = await UsersModel.findById(cutData.cashierId);
+  const cashier = await UsersModel.findOne({
+    _id: cutData.cashierId,
+    company: cutData.companyId,
+    disable: false
+  });
   if (!cashier) throw new Error('Cashier not found');
 
  
-  const cutNumber = await Model.generateCutNumber(cutData.cashRegister || 'CAJA');
+  const cutNumber = await Model.generateCutNumber(cutData.cashRegister || 'CAJA', cutData.companyId);
   const newCut = new Model({
     cutNumber,
     cashRegister: cutData.cashRegister || 'CAJA',
     cashier: cutData.cashierId,
     administrator: cutData.administratorId,
-    shiftStart: new Date(cutData.shiftStart),
-    shiftEnd: new Date(cutData.shiftEnd),
+    shift: cutData.shiftId,
+    shiftStart: shift.openedAt,
+    shiftEnd: new Date(),
     salesSummary: {
       totalSales: 0, totalRefunds: 0, netSales: 0,
       cash: { sales: 0, refunds: 0, net: 0 },
       card: { sales: 0, refunds: 0, net: 0 },
+      transfer: { sales: 0, refunds: 0, net: 0 },
       mixed: { sales: 0, refunds: 0, net: 0 },
       salesCount: 0, refundsCount: 0,
       salesIds: []
     },
     cashControl: {
-      expectedCash: cutData.actualCash || 0,
-      actualCash: cutData.actualCash || 0,
+      expectedCash: actualCash,
+      actualCash,
       difference: 0,
-      initialCash: cutData.initialCash || 0
+      initialCash: shift.openingCash
     },
     notes: cutData.notes,
     company: cutData.companyId,
@@ -65,11 +89,19 @@ if (existingCut) {
   
   await newCut.calculateTaxes();
 
-  newCut.cashControl.expectedCash = newCut.salesSummary.netSales + (cutData.initialCash || 0) + (newCut.cashControl.totalMovements || 0);
-  newCut.cashControl.actualCash = cutData.actualCash || 0;
+  newCut.cashControl.expectedCash = newCut.salesSummary.cash.net +
+    newCut.salesSummary.mixed.cashNet + shift.openingCash +
+    (newCut.cashControl.totalMovements || 0);
+  newCut.cashControl.actualCash = actualCash;
   newCut.cashControl.difference = newCut.cashControl.actualCash - newCut.cashControl.expectedCash;
 
   const savedCut = await newCut.save();
+  shift.status = 'closed';
+  shift.closingCash = actualCash;
+  shift.closedAt = shift.closedAt || new Date();
+  shift.cutStatus = 'completed';
+  shift.cut = savedCut._id;
+  await shift.save();
   
   console.log(`Corte creado: ${savedCut.cutNumber}`);
   console.log(`Total de ventas: $${savedCut.salesSummary.netSales}`);

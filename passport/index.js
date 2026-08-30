@@ -41,7 +41,7 @@ passport.use(
   new JwtStrategy(jwtOptions, (jwtPayload, done) => {
     Users.findById(jwtPayload.userId, (err, user) => {
       if (err) return done(err, false);
-      if (user) {
+      if (user && user.disable !== true) {
         return done(null, user);
       } else {
         return done(null, false);
@@ -53,7 +53,7 @@ passport.use(
 
 // Middleware 
 exports.isAuth = (req, res, next) => {
-  passport.authenticate('jwt', { session: false }, (err, user, info) => {
+  passport.authenticate('jwt', { session: false }, (err, user) => {
     if (err) {
       return next(err);
     }

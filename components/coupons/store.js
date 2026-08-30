@@ -321,12 +321,13 @@ async function getCouponsReport(companyId, startDate, endDate) {
   }
 }
 
-async function expireOldCoupons() {
+async function expireOldCoupons(companyId) {
   try {
     const now = new Date();
 
     const result = await Model.updateMany(
       {
+        company: companyId,
         status: 'active',
         expirationDate: { $lt: now }
       },

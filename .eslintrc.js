@@ -1,18 +1,15 @@
 module.exports = {
   env: {
-    browser: true,
+    node: true,
     es2021: true,
   },
   parserOptions: {
     ecmaVersion: 12,
     sourceType: 'module',
   },
-  plugins: ['prettier'],
-  extends: ['airbnb-base', 'prettier'],
+  extends: ['eslint:recommended'],
   rules: {
     'no-console': 'off',
-    'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-    'import/extensions': 'off',
-    'prefer-promise-reject-errors': 'off',
+    'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
   },
 };

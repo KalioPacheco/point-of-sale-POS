@@ -9,8 +9,12 @@ const {
   requireRole
 } = require('../../middleware/auth');
 const { validateCashRegisterCut } = require('../../middleware/validation');
+const Cut = require('./model');
+const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
 
 const router = express.Router();
+const scopeCut = scopeResource(Cut, 'cutId');
+router.use(passportConfig.isAuth, authenticateToken, requireCompanyScope);
 
 const handleRequest = (req, res, promise) => {
   promise
@@ -61,13 +65,13 @@ router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', '
 });
 
 
-router.get('/:cutId/pdf', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
+router.get('/:cutId/pdf', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), scopeCut, (req, res) => {
   store.generateCutPDFDirect(req.params.cutId, res)
     .catch(err => response.error(req, res, err.message, 500, err));
 });
 
 
-router.get('/:cutId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
+router.get('/:cutId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), scopeCut, (req, res) => {
   handleRequest(req, res, controller.getCashRegisterCutById(req.params.cutId));
 });
 

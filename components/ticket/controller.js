@@ -4,6 +4,7 @@
 /* eslint-disable no-restricted-syntax */
 const store = require('./store');
 const taxController = require('../taxes/controller'); 
+const mongoose = require('mongoose');
 
 
 const validateTicketData = (ticketData) => {
@@ -161,13 +162,14 @@ const createTicketWithCoupon = async (saleData, ticketConfig = {}) => {
       },
       
 
-      company: saleData.company || companyId
+      company: saleData.company
     };
   
     const Model = require('./model'); // eslint-disable-line global-require
     ticketData.ticketNumber = await Model.generateTicketNumber(
       'sale', 
-      ticketConfig.cashRegister || 'CAJA-1'
+      ticketConfig.cashRegister || 'CAJA-1',
+      saleData.company
     );
     
 
@@ -231,7 +233,7 @@ const processSaleTicketWithCoupon = async (saleData, userId, companyId) => {
       appliedCoupon: saleData.appliedCoupon
     };
     
-    return store.processSaleTicketWithCoupon(saleDataWithCoupon, userId, companyId);
+    return store.processSaleTicket(saleDataWithCoupon, userId, companyId);
   } catch (error) {
     throw new Error(`Error processing sale ticket with coupon: ${error.message}`);
   }
@@ -387,9 +389,9 @@ const reprintTicket = (ticketId, userId) => {
   return store.reprintTicket(ticketId, userId);
 };
 
-const cancelTicket = (ticketId, reason, userId) => {
+const cancelTicket = (ticketId, reason, userId, companyId) => {
   validateId(ticketId, 'Ticket ID');
-  return store.cancelTicket(ticketId, reason, userId);
+  return store.cancelTicket(ticketId, reason, userId, companyId);
 };
 
 const getTicketStats = (filters = {}) => store.getTicketStats(filters);

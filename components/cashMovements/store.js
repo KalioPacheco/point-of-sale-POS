@@ -3,7 +3,10 @@ const Model = require('./model');
 async function createMovement(movementData) {
   try {
 
-    const movementNumber = await Model.generateMovementNumber();
+    const movementNumber = await Model.generateMovementNumber(
+      movementData.companyId,
+      movementData.cashRegister || 'GLOBAL'
+    );
     
     const movement = new Model({
       movementNumber,
@@ -16,6 +19,7 @@ async function createMovement(movementData) {
       company: movementData.companyId,
       cashRegister: movementData.cashRegister,
       saleReference: movementData.saleReference,
+      shift: movementData.shiftId,
       receiptNumber: movementData.receiptNumber,
       authorized: movementData.authorized !== undefined ? movementData.authorized : true,
       authorizedBy: movementData.authorizedBy,
@@ -213,6 +217,7 @@ async function getUserMovements(userId, filters = {}) {
       disable: false, 
       user: userId 
     };
+    if (filters.companyId) query.company = filters.companyId;
 
     if (filters.startDate || filters.endDate) {
       query.createdAt = {};
@@ -238,6 +243,7 @@ async function getCashRegisterMovements(cashRegister, filters = {}) {
       // eslint-disable-next-line object-shorthand
       cashRegister: cashRegister 
     };
+    if (filters.companyId) query.company = filters.companyId;
 
     if (filters.startDate || filters.endDate) {
       query.createdAt = {};

@@ -1,4 +1,3 @@
-const passport = require('passport');
 const Model = require('./model');
 
 function sanitizeUser(userDocument) {

@@ -1,48 +1,51 @@
 const jwt = require('jsonwebtoken');
+const Users = require('../components/users/model');
+const response = require('../network');
 
 
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(' ')[1]; 
 
   if (!token) {
-    return res.status(401).json({ 
-      error: 'Token de acceso requerido',
-      message: 'Debe proporcionar un token válido'
-    });
+    return response.error(req, res, 'Token de acceso requerido', 401);
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; 
+    const user = await Users.findById(decoded.userId)
+      .select('_id userName name lastNames role typeUser company disable')
+      .lean();
+
+    if (!user || user.disable === true) {
+      return response.error(req, res, 'Sesion revocada', 401);
+    }
+
+    req.user = {
+      ...decoded,
+      ...user,
+      id: user._id,
+      userId: user._id,
+      role: user.role,
+      company: user.company
+    };
     return next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        error: 'Token expirado',
-        message: 'El token ha expirado, inicie sesión nuevamente'
-      });
+      return response.error(req, res, 'Token expirado', 401);
     }
     
-    return res.status(403).json({ 
-      error: 'Token inválido',
-      message: 'El token proporcionado no es válido'
-    });
+    return response.error(req, res, 'Token invalido', 403);
   }
 };
 
 const requireRole = (roles) => (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      error: 'Usuario no autenticado',
-      message: 'Debe estar autenticado para acceder a este recurso'
-    });
+    return response.error(req, res, 'Usuario no autenticado', 401);
   }
 
   if (!roles.includes(req.user.role)) {
-    return res.status(403).json({
-      error: 'Acceso denegado por rol insuficiente'
-    });
+    return response.error(req, res, 'Acceso denegado por rol insuficiente', 403);
   }
 
   return next();
@@ -73,9 +76,7 @@ const optionalAuth = (req, res, next) => {
 
 const requireOwnership = (userIdField = 'userId') => (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ 
-      error: 'Usuario no autenticado' 
-    });
+    return response.error(req, res, 'Usuario no autenticado', 401);
   }
 
   const resourceUserId = req.params[userIdField] || req.body[userIdField];
@@ -87,10 +88,7 @@ const requireOwnership = (userIdField = 'userId') => (req, res, next) => {
 
   
   if (resourceUserId && resourceUserId !== currentUserId) {
-    return res.status(403).json({ 
-      error: 'No autorizado',
-      message: 'Solo puedes acceder a tus propios recursos'
-    });
+    return response.error(req, res, 'Solo puedes acceder a tus propios recursos', 403);
   }
 
   return next();

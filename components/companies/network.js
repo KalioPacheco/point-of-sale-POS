@@ -7,7 +7,8 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
-const { validateCompany } = require('../../middleware/validation');
+const { validateCompanyCreate, validateCompanyUpdate } = require('../../middleware/validation');
+const { requireCompanyScope, requireTenantParam } = require('../../middleware/tenant');
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ const addCompany = function (req, res) {
 };
 
 const listCompanies = function (req, res) {
-  const { companyId } = req.params;
+  const companyId = req.params.companyId || Helper.getCompanyId(req);
   controller
     .listCompanies(companyId)
     .then(product => {
@@ -61,11 +62,11 @@ const removeCompany = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['admin']), listCompanies);
-router.get('/:companyId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), listCompanies);
-router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin']), validateCompany, addCompany);
-router.patch('/:companyId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), validateCompany, updateCompany);
-router.delete('/:companyId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), removeCompany);
+router.get('/', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin']), listCompanies);
+router.get('/:companyId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin']), requireTenantParam('companyId'), listCompanies);
+router.post('/', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin']), validateCompanyCreate, addCompany);
+router.patch('/:companyId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin']), requireTenantParam('companyId'), validateCompanyUpdate, updateCompany);
+router.delete('/:companyId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin']), requireTenantParam('companyId'), removeCompany);
 
 
 module.exports = router;

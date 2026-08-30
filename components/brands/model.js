@@ -25,6 +25,7 @@ const mySchema = new Schema({
   company: {
     type: Schema.ObjectId,
     ref: 'Companies',
+    required: true,
   },
 });
 

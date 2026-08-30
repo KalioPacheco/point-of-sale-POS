@@ -9,7 +9,11 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
-const { validateProduct } = require('../../middleware/validation');
+const { validateProductCreate, validateProductUpdate } = require('../../middleware/validation');
+const { Product } = require('./model');
+const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
+
+const scopeProduct = scopeResource(Product, 'productId');
 
 
 const router = express.Router();
@@ -39,12 +43,13 @@ const addProduct = function addProduct(req, res) {
 const listProducts = function listProducts(req, res) {
   const { productId } = req.params;
   const companyId = Helper.getCompanyId(req);
-  const { q, category, disable } = req.query;
+  const { q, category, disable, ids } = req.query;
 
   const filters = {
     q: typeof q === 'string' ? q : undefined,
     category: typeof category === 'string' ? category : undefined,
     disable: disable === 'true' ? true : disable === 'false' ? false : undefined,
+    ids: typeof ids === 'string' ? ids.split(',').filter(Boolean) : undefined,
   };
 
   controller
@@ -302,7 +307,7 @@ const checkCouponEligibility = function checkCouponEligibility(req, res) {
   }
 
   controller
-    .checkCouponEligibility(productIds, couponId)
+    .checkCouponEligibility(productIds, couponId, Helper.getCompanyId(req))
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -377,24 +382,23 @@ const getProductsByCategories = function getProductsByCategories(req, res) {
 };
 
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireRole(['vendedor', 'admin', 'manager']), listProducts);
-router.post('/', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, addProduct); 
-router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), validateProduct, updateProduct);
-router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), updateProduct);
-router.delete('/:productId', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), removeProduct);
-router.put('/:productId/stock/add', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), addStock);
-router.put('/:productId/stock/reduce', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), reduceStock);
-router.put('/:productId/stock/set', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), setStock);
-router.get('/:productId/stock/history', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), getStockHistory);
-router.get('/:productId/stock', passportConfig.isAuth,authenticateToken, requireRole(['admin', 'manager']), getProductStock);
-router.post('/:productId/variants', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), addVariant);
-router.put('/:productId/variants/:variantId/stock/add', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), addVariantStock);
-router.put('/:productId/variants/:variantId/disable', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), disableVariant);
-router.put('/:productId/variants/:variantId/enable', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), enableVariant);
-router.get('/reports/low-stock', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), getLowStockProducts);
-router.post('/check-coupon-eligibility', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), checkCouponEligibility);
-router.post('/calculate-price-with-coupon', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), calculatePriceWithCoupon);
-router.get('/eligible-for-coupons', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), getEligibleForCoupons);
-router.post('/by-categories', passportConfig.isAuth, authenticateToken, requireRole(['admin', 'manager']), getProductsByCategories);
+router.get('/', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['vendedor', 'admin', 'manager']), listProducts);
+router.post('/', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), validateProductCreate, addProduct);
+router.patch('/:productId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, validateProductUpdate, updateProduct);
+router.delete('/:productId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, removeProduct);
+router.put('/:productId/stock/add', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, addStock);
+router.put('/:productId/stock/reduce', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, reduceStock);
+router.put('/:productId/stock/set', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, setStock);
+router.get('/:productId/stock/history', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, getStockHistory);
+router.get('/:productId/stock', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, getProductStock);
+router.post('/:productId/variants', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, addVariant);
+router.put('/:productId/variants/:variantId/stock/add', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, addVariantStock);
+router.put('/:productId/variants/:variantId/disable', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, disableVariant);
+router.put('/:productId/variants/:variantId/enable', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, enableVariant);
+router.get('/reports/low-stock', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), getLowStockProducts);
+router.post('/check-coupon-eligibility', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), checkCouponEligibility);
+router.post('/calculate-price-with-coupon', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), calculatePriceWithCoupon);
+router.get('/eligible-for-coupons', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), getEligibleForCoupons);
+router.post('/by-categories', passportConfig.isAuth, authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), getProductsByCategories);
 
 module.exports = router;

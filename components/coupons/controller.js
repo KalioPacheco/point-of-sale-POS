@@ -1,5 +1,6 @@
 const store = require('./store');
 const Model = require('./model');
+const mongoose = require('mongoose');
 
 
 function addCoupon(couponData) {
@@ -37,7 +38,7 @@ function removeCoupon(couponId) {
 }
 
 
-async function validateCoupon(couponCode, companyId, saleData, customerId = null) {
+async function validateCoupon(couponCode, companyId, saleData, customerId = null, session = null) {
   try {
     if (!couponCode || !companyId || !saleData) {
       return {
@@ -46,7 +47,7 @@ async function validateCoupon(couponCode, companyId, saleData, customerId = null
       };
     }
     
-    const coupon = await Model.findValidCoupon(couponCode, companyId);
+    const coupon = await Model.findValidCoupon(couponCode, companyId, session);
     
     if (!coupon) {
       return {
@@ -85,6 +86,19 @@ async function validateCoupon(couponCode, companyId, saleData, customerId = null
 
 async function applyCoupon(couponCode, companyId, saleData, customerId = null) {
   try {
+    const Sale = require('../sales/model'); // eslint-disable-line global-require
+
+    if (!saleData?.saleId || !mongoose.Types.ObjectId.isValid(saleData.saleId)) {
+      return { success: false, error: 'A confirmed sale ID is required to consume a coupon' };
+    }
+
+    const sale = await Sale.findOne({
+      _id: saleData.saleId,
+      company: companyId,
+      status: 'confirmed',
+      disable: false
+    });
+    if (!sale) return { success: false, error: 'Confirmed sale not found' };
 
     const validation = await validateCoupon(couponCode, companyId, saleData, customerId);
     
@@ -103,7 +117,18 @@ async function applyCoupon(couponCode, companyId, saleData, customerId = null) {
         error: 'Cupón no encontrado'
       };
     }
-    await coupon.recordUsage(saleData, customerId);
+    const alreadyUsed = coupon.usageHistory.some(
+      usage => usage.saleId && String(usage.saleId) === String(sale._id)
+    );
+    if (!alreadyUsed) {
+      await coupon.recordUsage({
+        ...saleData,
+        saleId: sale._id,
+        subtotal: sale.subtotal,
+        total: sale.total,
+        finalTotal: sale.finalTotal
+      }, customerId);
+    }
 
     return {
       success: true,
@@ -168,9 +193,9 @@ async function getCouponsReport(companyId, startDate, endDate) {
 }
 
 
-async function expireCoupons() {
+async function expireCoupons(companyId) {
   try {
-    return await store.expireOldCoupons();
+    return await store.expireOldCoupons(companyId);
   } catch (error) {
     return Promise.reject(new Error(`Error expiring coupons: ${error.message}`));
   }

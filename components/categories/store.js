@@ -10,7 +10,7 @@ async function listCategories(categoryId, companyId) {
   const filter = {};
   
   if (categoryId) {
-    filter.id = categoryId;
+    filter._id = categoryId;
   }
 
   
