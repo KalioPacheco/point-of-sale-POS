@@ -57,6 +57,9 @@ test('categories.store.remove aplica filtro por company', async () => {
 });
 
 test('products.store.addStock aplica filtro por company cuando viene del token', async () => {
+  const mongoose = require('mongoose');
+  const originalStartSession = mongoose.startSession;
+  mongoose.startSession = async () => ({ withTransaction: fn => fn(), endSession: async () => {} });
   const productModel = require('../components/products/model');
   const store = require('../components/products/store');
 
@@ -65,7 +68,7 @@ test('products.store.addStock aplica filtro por company cuando viene del token',
   let receivedFilter;
   const companyId = '507f1f77bcf86cd799439011';
 
-  productModel.Product.findOne = async (filter) => {
+  productModel.Product.findOne = (filter) => ({ session: async () => {
     receivedFilter = filter;
     return {
       _id: 'p1',
@@ -75,7 +78,7 @@ test('products.store.addStock aplica filtro por company cuando viene del token',
         return this;
       },
     };
-  };
+  } });
 
   productModel.StockHistory.create = async () => ({ id: 'stock-history-1' });
 
@@ -85,6 +88,7 @@ test('products.store.addStock aplica filtro por company cuando viene del token',
     assert.equal(receivedFilter.company, companyId);
     assert.equal(receivedFilter.disable, false);
   } finally {
+    mongoose.startSession = originalStartSession;
     restore(productModel.Product, 'findOne', originalFindOne);
     restore(productModel.StockHistory, 'create', originalCreate);
   }

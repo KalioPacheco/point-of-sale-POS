@@ -381,13 +381,13 @@ async function addSell(sell, idempotencyKey) {
   let saleId;
   try {
     await session.withTransaction(async () => {
-      const shift = await CashRegisterShift.findOne({
+      const shift = await CashRegisterShift.findOneAndUpdate({
         _id: sell.shiftId,
         company: sell.companyId,
         cashRegister: sell.cashRegister,
         cashier: sell.createdBy,
         status: 'open'
-      }).session(session);
+      }, { $inc: { operationRevision: 1 } }, { new: true, session });
       if (!shift) throw new Error('No open shift exists for this cash register');
 
       if (sell.customerId) {

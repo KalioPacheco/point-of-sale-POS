@@ -925,7 +925,8 @@ async function processRefundTicket(refundData, userId, companyId) {
       };
       if (refundData.shiftId) shiftFilter._id = refundData.shiftId;
       if (refundData.cashRegister) shiftFilter.cashRegister = refundData.cashRegister;
-      const refundShift = await CashRegisterShift.findOne(shiftFilter).session(session);
+      const refundShift = await CashRegisterShift.findOneAndUpdate(shiftFilter,
+        { $inc: { operationRevision: 1 } }, { new: true, session });
       if (!refundShift) throw new Error('An open cashier shift is required for a refund');
 
       for (const item of sale.products) {

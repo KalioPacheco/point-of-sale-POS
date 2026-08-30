@@ -47,16 +47,13 @@ function getCurrentShift(companyId, cashRegister, cashierId) {
 async function closeShift(shiftId, companyId, closingCash, notes, actorId, actorRole) {
   const filter = { _id: shiftId, company: companyId, status: 'open' };
   if (actorRole === 'vendedor') filter.cashier = actorId;
-  const shift = await Model.findOne(filter);
+  const now = new Date();
+  const shift = await Model.findOneAndUpdate(filter, { $set: {
+    status: 'closed', closingCash, closedAt: now, cutStatus: 'pending',
+    closeRequestedBy: actorId, closeRequestedAt: now, ...(notes ? { notes } : {})
+  }, $inc: { operationRevision: 1 } }, { new: true, runValidators: true });
   if (!shift) throw new Error('Open shift not found');
-  shift.status = 'closed';
-  shift.closingCash = closingCash;
-  shift.closedAt = new Date();
-  shift.cutStatus = 'pending';
-  shift.closeRequestedBy = actorId;
-  shift.closeRequestedAt = new Date();
-  if (notes) shift.notes = notes;
-  return shift.save();
+  return shift;
 }
 
 function listPendingCuts(companyId) {

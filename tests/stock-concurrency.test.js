@@ -1,107 +1,46 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const mongoose = require('mongoose');
+const { Product, StockHistory } = require('../components/products/model');
+const store = require('../components/products/store');
 
-function restore(target, key, original) {
-    target[key] = original;
-}
-
-test('products.store.reduceStock usa filtro atómico con stock >= quantity', async () => {
-    const productModel = require('../components/products/model');
-    const store = require('../components/products/store');
-
-    const originalFindOneAndUpdate = productModel.Product.findOneAndUpdate;
-    const originalCreate = productModel.StockHistory.create;
-
-    const companyId = '507f1f77bcf86cd799439011';
-    let receivedFilter;
-    let receivedUpdate;
-
-    productModel.Product.findOneAndUpdate = async (filter, update) => {
-        receivedFilter = filter;
-        receivedUpdate = update;
-        return {
-            _id: 'p1',
-            name: 'Producto A',
-            stock: 3,
-        };
-    };
-
-    productModel.StockHistory.create = async () => ({ id: 'history-1' });
-
-    try {
-        await store.reduceStock('p1', 2, 'user-1', 'Venta test', companyId);
-
-        assert.equal(receivedFilter._id, 'p1');
-        assert.equal(receivedFilter.disable, false);
-        assert.equal(receivedFilter.company, companyId);
-        assert.equal(receivedFilter.stock.$gte, 2);
-        assert.equal(receivedUpdate.$inc.stock, -2);
-        assert.equal(receivedUpdate.$set.updated, true);
-    } finally {
-        restore(productModel.Product, 'findOneAndUpdate', originalFindOneAndUpdate);
-        restore(productModel.StockHistory, 'create', originalCreate);
+test('manual stock writes product and history in the same transaction', async (t) => {
+  const session = { withTransaction: fn => fn(), endSession: async () => {} };
+  t.mock.method(mongoose, 'startSession', async () => session);
+  t.mock.method(Product, 'findOne', filter => ({
+    session: async passedSession => {
+      assert.equal(filter.company, 'tenant');
+      assert.equal(passedSession, session);
+      return { _id: 'p1', name: 'Product', stock: 4, save: async options => {
+        assert.equal(options.session, session);
+      } };
     }
+  }));
+  t.mock.method(StockHistory, 'create', async (rows, options) => {
+    assert.equal(options.session, session);
+    assert.equal(rows[0].previousStock, 4);
+    assert.equal(rows[0].newStock, 2);
+    assert.equal(rows[0].user, 'actor');
+  });
+  const result = await store.reduceStock('p1', 2, 'actor', 'manual', 'tenant');
+  assert.equal(result.product.newStock, 2);
 });
 
-test('simulación concurrente: solo una reducción consume la unidad disponible', async () => {
-    const productModel = require('../components/products/model');
-    const store = require('../components/products/store');
+test('insufficient stock fails before writes and ends its session', async (t) => {
+  let ended = false;
+  t.mock.method(mongoose, 'startSession', async () => ({
+    withTransaction: fn => fn(), endSession: async () => { ended = true; }
+  }));
+  t.mock.method(Product, 'findOne', () => ({ session: async () => ({ stock: 1 }) }));
+  const history = t.mock.method(StockHistory, 'create', async () => {});
+  await assert.rejects(store.reduceStock('p1', 2, 'actor', 'manual'), { code: 'INSUFFICIENT_STOCK' });
+  assert.equal(history.mock.callCount(), 0);
+  assert.equal(ended, true);
+});
 
-    const originalFindOneAndUpdate = productModel.Product.findOneAndUpdate;
-    const originalFindOne = productModel.Product.findOne;
-    const originalCreate = productModel.StockHistory.create;
-
-    let stock = 1;
-    let historyWrites = 0;
-
-    productModel.Product.findOneAndUpdate = async (filter, update) => {
-        await new Promise((resolve) => {
-            setTimeout(resolve, 10);
-        });
-
-        const requested = filter.stock?.$gte || 0;
-        if (stock < requested) {
-            return null;
-        }
-
-        stock += update.$inc.stock;
-
-        return {
-            _id: filter._id,
-            name: 'Producto Carrera',
-            stock,
-        };
-    };
-
-    productModel.Product.findOne = () => ({
-        select: async () => ({
-            name: 'Producto Carrera',
-            stock,
-        }),
-    });
-
-    productModel.StockHistory.create = async () => {
-        historyWrites += 1;
-        return { id: `history-${historyWrites}` };
-    };
-
-    try {
-        const [first, second] = await Promise.allSettled([
-            store.reduceStock('p-race', 1, 'u1', 'Venta 1'),
-            store.reduceStock('p-race', 1, 'u2', 'Venta 2'),
-        ]);
-
-        const fulfilled = [first, second].filter((result) => result.status === 'fulfilled');
-        const rejected = [first, second].filter((result) => result.status === 'rejected');
-
-        assert.equal(fulfilled.length, 1);
-        assert.equal(rejected.length, 1);
-        assert.equal(rejected[0].reason.code, 'INSUFFICIENT_STOCK');
-        assert.equal(stock, 0);
-        assert.equal(historyWrites, 1);
-    } finally {
-        restore(productModel.Product, 'findOneAndUpdate', originalFindOneAndUpdate);
-        restore(productModel.Product, 'findOne', originalFindOne);
-        restore(productModel.StockHistory, 'create', originalCreate);
-    }
+test('manual stock rejects non-numeric and non-finite quantities', async () => {
+  for (const quantity of [undefined, null, NaN, Infinity, '2', -1]) {
+    await assert.rejects(store.addStock('p1', quantity, 'actor'), /Quantity/);
+    await assert.rejects(store.setStock('p1', quantity, 'actor'), /Quantity/);
+  }
 });
