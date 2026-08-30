@@ -1,437 +1,513 @@
+const mongoose = require('mongoose');
 const store = require('./store');
+const Sale = require('./model');
+const { Product, StockHistory } = require('../products/model');
+const Coupon = require('../coupons/model');
+const CashMovement = require('../cashMovements/model');
+const CashRegisterShift = require('../cashRegisterShifts/model');
+const Ticket = require('../ticket/model');
+const Company = require('../companies/model');
+const Customer = require('../customer/model');
+const couponsController = require('../coupons/controller');
 
-async function deductInventoryFromSale(products, saleId, companyId = null) {
-  if (!products || !Array.isArray(products) || products.length === 0) {
-    return;
-  }
+// Product snapshots populate these refs, so sales must register them independently of route load order.
+require('../brands/model'); // eslint-disable-line global-require
+require('../categories/model'); // eslint-disable-line global-require
 
-  const productsController = require('../products/controller'); // eslint-disable-line global-require
-  const reason = `Venta ${saleId}`;
+const roundMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
-  const itemsToDeduct = await Promise.all(
-    products.map(async (item) => {
-      const { productId, quantity: qty } = item;
-      const quantity = qty || 1;
-      if (!productId || quantity < 1) return null;
-      const stockInfo = await productsController.getProductStock(productId, companyId);
-      if (stockInfo.hasVariants) return null;
-      return { productId, quantity };
-    })
-  );
+function normalizePayment(payment = {}, total) {
+  const method = payment.method;
+  const normalized = {
+    method,
+    amount: roundMoney(total),
+    cashReceived: 0,
+    change: 0,
+    cashAmount: 0,
+    cardAmount: 0,
+    reference: payment.reference?.trim() || undefined
+  };
 
-  const deductedItems = [];
-
-  try {
-    // Evita deducciones parciales si uno de los productos falla por stock.
-    // eslint-disable-next-line no-restricted-syntax
-    for (const item of itemsToDeduct.filter(Boolean)) {
-      await productsController.reduceStock(
-        item.productId,
-        item.quantity,
-        null,
-        reason,
-        companyId
-      );
-
-      deductedItems.push(item);
+  if (method === 'cash') {
+    normalized.cashReceived = roundMoney(payment.cashReceived);
+    if (!Number.isFinite(normalized.cashReceived) || normalized.cashReceived < total) {
+      throw new Error('El efectivo recibido debe cubrir el total');
     }
-  } catch (error) {
-    // Reversa deducciones aplicadas antes del fallo para mantener consistencia.
-    await Promise.all(
-      deductedItems.map(async ({ productId, quantity }) => {
-        try {
-          await productsController.addStock(
-            productId,
-            quantity,
-            null,
-            `Rollback por falla de inventario en venta ${saleId}`,
-            companyId
-          );
-        } catch (rollbackError) {
-          console.error(
-            `[inventory-rollback-error] productId=${productId} saleId=${saleId} error=${rollbackError.message}`
-          );
-        }
-      })
-    );
-
-    throw error;
+    normalized.cashAmount = roundMoney(total);
+    normalized.change = roundMoney(normalized.cashReceived - total);
+    return normalized;
   }
+
+  if (method === 'card' || method === 'transfer') {
+    if (!normalized.reference) throw new Error('La referencia de pago es requerida');
+    normalized.cardAmount = roundMoney(total);
+    return normalized;
+  }
+
+  if (method === 'mixed') {
+    normalized.cashAmount = roundMoney(payment.cashAmount);
+    normalized.cardAmount = roundMoney(payment.cardAmount);
+    if (!Number.isFinite(normalized.cashAmount) || normalized.cashAmount < 0 ||
+        !Number.isFinite(normalized.cardAmount) || normalized.cardAmount < 0) {
+      throw new Error('Los importes del pago mixto deben ser numeros no negativos');
+    }
+    if (roundMoney(normalized.cashAmount + normalized.cardAmount) !== roundMoney(total)) {
+      throw new Error('La suma del pago mixto debe coincidir con el total');
+    }
+    if (normalized.cardAmount > 0 && !normalized.reference) {
+      throw new Error('La referencia del pago mixto es requerida');
+    }
+    normalized.cashReceived = normalized.cashAmount;
+    return normalized;
+  }
+
+  throw new Error('Metodo de pago invalido');
 }
 
-/**
- * Devuelve inventario descontado en una venta (compensación si falla el cupón tras persistir la venta).
- */
-async function restoreInventoryFromSale(products, saleId, companyId = null) {
-  if (!products || !Array.isArray(products) || products.length === 0) {
-    return;
+async function createProductSnapshots(products, companyId, session = null) {
+  if (!Array.isArray(products) || products.length === 0) {
+    throw new Error('Products array is required');
   }
+  if (!companyId) throw new Error('Company scope is required');
 
-  const productsController = require('../products/controller'); // eslint-disable-line global-require
-  const reason = `Rollback compensación tras error de cupón en venta ${saleId}`;
+  const productIds = [...new Set(products.map(item => String(item.productId)))];
+  let query = Product.find({
+    _id: { $in: productIds },
+    company: companyId,
+    disable: false
+  }).populate('brand', 'name').populate('categories', 'name');
+  if (session) query = query.session(session);
+  const catalog = await query.exec();
+  const byId = new Map(catalog.map(product => [String(product._id), product]));
 
-  // eslint-disable-next-line no-restricted-syntax
-  for (const item of products) {
-    const { productId, quantity: qty } = item;
-    const quantity = qty || 1;
-    if (!productId || quantity < 1) continue;
-    // eslint-disable-next-line no-await-in-loop
-    const stockInfo = await productsController.getProductStock(productId, companyId);
-    if (stockInfo.hasVariants) continue;
-    // eslint-disable-next-line no-await-in-loop
-    await productsController.addStock(
-      productId,
+  return products.map(item => {
+    const product = byId.get(String(item.productId));
+    if (!product) throw new Error('Product ' + item.productId + ' not found in company');
+
+    const quantity = Number(item.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1) throw new Error('Invalid product quantity');
+
+    let variant = null;
+    if (product.hasVariants) {
+      if (!item.variantId) throw new Error('Variant required for ' + product.name);
+      variant = product.variants.id(item.variantId);
+      if (!variant || !variant.active) throw new Error('Variant not available for ' + product.name);
+    } else if (item.variantId) {
+      throw new Error('Product ' + product.name + ' does not use variants');
+    }
+
+    const price = roundMoney(variant?.price ?? product.price ?? 0);
+    if (!Number.isFinite(price) || price < 0) throw new Error('Invalid catalog price for ' + product.name);
+    const subtotal = roundMoney(price * quantity);
+    const taxRate = product.taxExempt ? 0 : Number(product.taxRate || 0);
+    const taxAmount = roundMoney((subtotal * taxRate) / 100);
+
+    return {
+      productId: product._id,
+      variantId: variant?._id,
+      variantName: variant?.name,
       quantity,
-      null,
-      reason,
-      companyId
-    );
-  }
-}
-
-async function validateSaleStock(products) {
-  if (!products || !Array.isArray(products) || products.length === 0) {
-    return;
-  }
-
-  const productsController = require('../products/controller'); // eslint-disable-line global-require
-
-  const validations = await Promise.all(
-    products.map(async (item) => {
-      const { productId, quantity: qty } = item;
-      const quantity = qty || 1;
-      if (!productId || quantity < 1) return null;
-      const stockInfo = await productsController.getProductStock(productId);
-      if (stockInfo.hasVariants) return null;
-      return { name: stockInfo.name, available: stockInfo.stock || 0, quantity };
-    })
-  );
-
-  const failed = validations.find(
-    (v) => v && v.available < v.quantity
-  );
-  if (failed) {
-    throw new Error(
-      `Stock insuficiente para "${failed.name}". Disponible: ${failed.available}, solicitado: ${failed.quantity}`
-    );
-  }
-}
-
-function listSales(sellId, companyId) {
-  return store.list(sellId, companyId);
-}
-
-function updateSell(sellId, sell) {
-  if (!sellId || !sell) {
-    return Promise.reject(new Error(
-      `companyId or company is undefined. userId is: ${sellId}, user is: ${JSON.stringify(sell)}`
-    ));
-  }
-  return store.update(sellId, sell);
-}
-
-function removeSell(sellId) {
-  if (!sellId) {
-    return Promise.reject(new Error('companyId is undefined'));
-  }
-  return store.remove(sellId);
-}
-
-
-async function createProductSnapshots(products) {
-  if (!products || !Array.isArray(products)) {
-    return Promise.reject(new Error('Products array is required'));
-  }
-
-  try {
-    const {Product} = require('../products/model'); // eslint-disable-line global-require
-    
-    const snapshotsPromises = products.map(async (item) => {
-      const product = await Product.findById(item.productId)
-        .populate('brand', 'name')
-        .populate('categories', 'name');
-      
-      if (!product) {
-        throw new Error(`Product with ID ${item.productId} not found`);
-      }
-      
-      const quantity = item.quantity || 1;
-      const price = item.price || product.price || 0;
-      const subtotal = price * quantity;
-      const taxAmount = product.taxExempt ? 0 : (subtotal * (product.taxRate || 0)) / 100;
-      const total = subtotal + taxAmount;
-      
-      return {
-        productId: product.id,
-        quantity,
-        priceSnapshot: {
-          name: product.name,
-          price,
-          cost: product.cost || 0,
-          taxRate: product.taxRate || 0,
-          taxExempt: product.taxExempt || false,
-          snapshotDate: new Date(),
-          brand: product.brand?.name || '',
-          category: product.categories?.[0]?.name || '',
-          sku: product.sku || '',
-          description: product.description || ''
-        },
-        subtotal,
-        taxAmount,
-        total
-      };
-    });
-    
-    return await Promise.all(snapshotsPromises);
-    
-  } catch (error) {
-    return Promise.reject(new Error(`Error creating product snapshots: ${error.message}`));
-  }
-}
-
-// FUNCIÓN ACTUALIZADA: Calcular impuestos usando snapshots
-async function calculateSaleTaxesWithSnapshots(products) {
-  if (!products || !Array.isArray(products)) {
-    return Promise.reject(new Error('Products array is required'));
-  }
-
-  try {
-    const productSnapshots = await createProductSnapshots(products);
-    
-    let subtotal = 0;
-    let totalTaxes = 0;
-    
-    productSnapshots.forEach(item => {
-      subtotal += item.subtotal;
-      totalTaxes += item.taxAmount;
-    });
-    
-    return {
+      availableStock: Number(variant ? variant.stock : product.stock) || 0,
+      priceSnapshot: {
+        name: product.name,
+        price,
+        cost: Number(product.cost || 0),
+        taxRate,
+        taxExempt: Boolean(product.taxExempt),
+        snapshotDate: new Date(),
+        brand: product.brand?.name || '',
+        category: product.categories?.[0]?.name || '',
+        sku: variant?.sku || product.sku || '',
+        description: product.description || ''
+      },
       subtotal,
-      totalTaxes,
-      total: subtotal + totalTaxes,
-      productSnapshots
+      taxAmount,
+      total: roundMoney(subtotal + taxAmount)
     };
-    
-  } catch (error) {
-    return Promise.reject(new Error(`Error calculating taxes with snapshots: ${error.message}`));
-  }
+  });
 }
 
-async function calculateSaleTaxes(products, _companyId) {
-  if (!products || !Array.isArray(products)) {
-    return Promise.reject(new Error('Products array is required'));
-  }
-
-  try {
-    const {Product} = require('../products/model'); // eslint-disable-line global-require
-    
-    let subtotal = 0;
-    let totalTaxes = 0;
-    
-    const calculations = await Promise.all(products.map(async (item) => {
-      const product = await Product.findById(item.productId);
-      if (!product) {
-        return { subtotal: 0, tax: 0 };
-      }
-      
-      const quantity = item.quantity || 1;
-      const price = item.price || product.price || 0;
-      const itemSubtotal = price * quantity;
-      const itemTax = product.taxExempt ? 0 : (itemSubtotal * (product.taxRate || 0)) / 100;
-      
-      return {
-        subtotal: itemSubtotal,
-        tax: itemTax
-      };
-    }));
-    
-    calculations.forEach(calc => {
-      subtotal += calc.subtotal;
-      totalTaxes += calc.tax;
-    });
-    
-    return {
-      subtotal,
-      totalTaxes,
-      total: subtotal + totalTaxes
-    };
-    
-  } catch (error) {
-    return Promise.reject(new Error(`Error calculating taxes: ${error.message}`));
-  }
+function calculateSnapshotTotals(productSnapshots) {
+  const subtotal = roundMoney(productSnapshots.reduce((sum, item) => sum + item.subtotal, 0));
+  const totalTaxes = roundMoney(productSnapshots.reduce((sum, item) => sum + item.taxAmount, 0));
+  return { subtotal, totalTaxes, total: roundMoney(subtotal + totalTaxes) };
 }
 
-async function processSaleWithCoupon(saleData) {
-  try {
-    const taxCalculation = await calculateSaleTaxesWithSnapshots(saleData.products);
-    
-    let couponResult = null;
-    if (saleData.couponCode) {
-      const couponsController = require('../coupons/controller'); // eslint-disable-line global-require
-      
-      const saleForCoupon = {
-        subtotal: taxCalculation.subtotal,
-        total: taxCalculation.total,
-        products: saleData.products
-      };
-      
-      couponResult = await couponsController.validateCoupon(
-        saleData.couponCode,
-        saleData.companyId,
-        saleForCoupon,
-        saleData.customerId
+async function prepareSale(saleData, session = null) {
+  const productSnapshots = await createProductSnapshots(
+    saleData.products,
+    saleData.companyId,
+    session
+  );
+  const totals = calculateSnapshotTotals(productSnapshots);
+  let couponValidation = null;
+
+  if (saleData.couponCode) {
+    couponValidation = await couponsController.validateCoupon(
+      saleData.couponCode,
+      saleData.companyId,
+      {
+        ...totals,
+        products: productSnapshots.map(item => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          price: item.priceSnapshot.price
+        }))
+      },
+      saleData.customerId,
+      session
+    );
+    if (!couponValidation.valid) throw new Error(couponValidation.error);
+  }
+
+  const couponDiscount = roundMoney(couponValidation?.discount?.discountAmount || 0);
+  const finalTotal = roundMoney(Math.max(0, totals.total - couponDiscount));
+
+  return {
+    productSnapshots,
+    ...totals,
+    couponValidation,
+    couponDiscount,
+    finalTotal,
+    payment: normalizePayment(saleData.payment, finalTotal)
+  };
+}
+
+async function reserveInventory(items, companyId, userId, saleId, session) {
+  for (const item of items) {
+    if (item.availableStock < item.quantity) {
+      throw new Error(
+        'Stock insuficiente para "' + item.priceSnapshot.name +
+        '". Disponible: ' + item.availableStock
       );
-      
-      if (!couponResult.valid) {
-        return Promise.reject(new Error(couponResult.error || 'Cupón no válido'));
+    }
+
+    let updated;
+    if (item.variantId) {
+      updated = await Product.findOneAndUpdate(
+        {
+          _id: item.productId,
+          company: companyId,
+          disable: false,
+          variants: {
+            $elemMatch: { _id: item.variantId, active: true, stock: { $gte: item.quantity } }
+          }
+        },
+        {
+          $inc: { 'variants.$[variant].stock': -item.quantity },
+          $set: { updated: true, updatedAt: new Date() }
+        },
+        {
+          new: true,
+          session,
+          arrayFilters: [{ 'variant._id': item.variantId }]
+        }
+      );
+    } else {
+      updated = await Product.findOneAndUpdate(
+        {
+          _id: item.productId,
+          company: companyId,
+          disable: false,
+          stock: { $gte: item.quantity }
+        },
+        {
+          $inc: { stock: -item.quantity },
+          $set: { updated: true, updatedAt: new Date() }
+        },
+        { new: true, session }
+      );
+    }
+
+    if (!updated) throw new Error('Stock changed for ' + item.priceSnapshot.name + '; retry the sale');
+
+    await StockHistory.create([{
+      product: item.productId,
+      user: userId,
+      type: 'reduce',
+      quantity: item.quantity,
+      previousStock: item.availableStock,
+      newStock: item.availableStock - item.quantity,
+      reason: 'Venta ' + saleId + (item.variantName ? ' / ' + item.variantName : '')
+    }], { session });
+  }
+}
+
+function buildCouponUsageFilter(couponId, saleId, customerId, companyId) {
+  const usageConditions = [
+    { 'usageHistory.saleId': { $ne: saleId } }
+  ];
+  if (customerId) {
+    usageConditions.push({ usageHistory: { $not: { $elemMatch: { customerId } } } });
+  }
+  return {
+    _id: couponId,
+    company: companyId,
+    disable: false,
+    status: 'active',
+    $and: usageConditions
+  };
+}
+
+async function recordCouponUsage(prepared, sale, customerId, companyId, session) {
+  if (!prepared.couponValidation) return;
+  const result = await Coupon.updateOne(
+    buildCouponUsageFilter(
+      prepared.couponValidation.coupon.id,
+      sale._id,
+      customerId,
+      companyId
+    ),
+    {
+      $push: {
+        usageHistory: {
+          customerId: customerId || undefined,
+          saleId: sale._id,
+          discountApplied: prepared.couponDiscount,
+          originalTotal: prepared.total,
+          finalTotal: prepared.finalTotal,
+          usedAt: new Date()
+        }
+      }
+    },
+    { session }
+  );
+  if (result.modifiedCount !== 1) throw new Error('Coupon could not be consumed');
+}
+
+async function createSaleMovement(sale, session) {
+  await CashMovement.create([{
+    movementNumber: 'SALE-' + sale._id,
+    type: 'sale',
+    amount: sale.finalTotal,
+    concept: 'Venta ' + sale._id,
+    description: 'Movimiento generado por checkout',
+    paymentMethod: sale.payment.method,
+    user: sale.createdBy,
+    company: sale.company,
+    cashRegister: sale.cashRegister,
+    saleReference: sale._id,
+    shift: sale.shift,
+    authorized: true
+  }], { session });
+}
+
+const ticketPaymentMethod = {
+  cash: 'efectivo',
+  card: 'tarjeta',
+  transfer: 'transferencia',
+  mixed: 'mixto'
+};
+
+async function createSaleTicket(sale, prepared, session) {
+  const company = await Company.findById(sale.company).session(session).lean();
+  const address = company?.address
+    ? [company.address.street, company.address.number?.ext, company.address.city]
+      .filter(Boolean).join(', ')
+    : '';
+
+  await Ticket.create([{
+    ticketNumber: 'SALE-' + sale._id,
+    ticketType: 'sale',
+    saleId: sale._id,
+    company: sale.company,
+    storeInfo: {
+      name: company?.ticketStoreConfig?.name || company?.name || 'Mi Tienda',
+      address: company?.ticketStoreConfig?.address || address,
+      taxId: company?.ticketStoreConfig?.taxId || company?.rfc || '',
+      phone: company?.ticketStoreConfig?.phone || company?.phone || '',
+      email: company?.ticketStoreConfig?.email || company?.email || ''
+    },
+    transactionInfo: {
+      date: sale.createdAt,
+      cashRegister: sale.cashRegister,
+      cashier: { id: sale.createdBy }
+    },
+    items: prepared.productSnapshots.map(item => ({
+      productId: item.productId,
+      productName: item.priceSnapshot.name,
+      quantity: item.quantity,
+      unitPrice: item.priceSnapshot.price,
+      totalTaxes: item.taxAmount,
+      totalPrice: item.total,
+      variant: item.variantName ? { name: item.variantName } : undefined,
+      taxes: item.priceSnapshot.taxExempt ? [] : [{
+        name: 'Impuesto',
+        type: 'percentage',
+        rate: item.priceSnapshot.taxRate,
+        amount: item.taxAmount
+      }]
+    })),
+    totals: {
+      subtotal: prepared.subtotal,
+      totalTaxes: prepared.totalTaxes,
+      discounts: prepared.couponDiscount,
+      couponDiscount: prepared.couponDiscount,
+      couponCode: prepared.couponValidation?.coupon?.code,
+      couponName: prepared.couponValidation?.coupon?.name,
+      total: prepared.finalTotal
+    },
+    appliedCoupon: prepared.couponValidation ? {
+      couponId: prepared.couponValidation.coupon.id,
+      code: prepared.couponValidation.coupon.code,
+      name: prepared.couponValidation.coupon.name,
+      description: prepared.couponValidation.coupon.description,
+      discountType: prepared.couponValidation.coupon.discountType,
+      discountValue: prepared.couponValidation.coupon.discountValue,
+      discountAmount: prepared.couponDiscount
+    } : undefined,
+    payment: {
+      method: ticketPaymentMethod[sale.payment.method],
+      details: {
+        cashReceived: sale.payment.cashReceived,
+        change: sale.payment.change,
+        cashAmount: sale.payment.cashAmount,
+        cardAmount: sale.payment.cardAmount,
+        transferenceRef: sale.payment.reference
       }
     }
-    
-    const finalSaleData = {
-      ...saleData,
-      products: taxCalculation.productSnapshots,
-      subtotal: taxCalculation.subtotal,
-      totalTaxes: taxCalculation.totalTaxes,
-      total: taxCalculation.total,
-      couponCode: couponResult?.coupon?.code || null,
-      couponDiscount: couponResult?.discount?.discountAmount || 0,
-      couponId: couponResult?.coupon?.id || null,
-      finalTotal: taxCalculation.total - (couponResult?.discount?.discountAmount || 0)
-    };
-    
-    return finalSaleData;
-    
-  } catch (error) {
-    return Promise.reject(new Error(`Error processing sale with coupon: ${error.message}`));
-  }
-}
-
-async function validateCouponForSale(couponCode, companyId, products, customerId = null) {
-  try {
-    const taxCalculation = await calculateSaleTaxesWithSnapshots(products);
-    
-    const saleForValidation = {
-      subtotal: taxCalculation.subtotal,
-      total: taxCalculation.total,
-      products
-    };
-    
-    const couponsController = require('../coupons/controller'); // eslint-disable-line global-require
-    
-    return await couponsController.validateCoupon(
-      couponCode,
-      companyId,
-      saleForValidation,
-      customerId
-    );
-    
-  } catch (error) {
-    return Promise.reject(new Error(`Error validating coupon: ${error.message}`));
-  }
+  }], { session });
 }
 
 async function addSell(sell, idempotencyKey) {
-  if (!sell) {
-    return Promise.reject(new Error('Sell data is empty'));
-  }
+  if (!sell?.companyId || !sell?.createdBy) throw new Error('Sale tenant and cashier are required');
+  if (!idempotencyKey) throw new Error('Idempotency key is required');
 
-  if (!idempotencyKey) {
-    return Promise.reject(new Error('Idempotency key is required'));
-  }
+  const existing = await store.findByIdempotencyKey(idempotencyKey, sell.companyId);
+  if (existing) return existing;
 
+  const session = await mongoose.startSession();
+  let saleId;
   try {
-    const existingSale = await store.findByIdempotencyKey(idempotencyKey);
+    await session.withTransaction(async () => {
+      const shift = await CashRegisterShift.findOne({
+        _id: sell.shiftId,
+        company: sell.companyId,
+        cashRegister: sell.cashRegister,
+        cashier: sell.createdBy,
+        status: 'open'
+      }).session(session);
+      if (!shift) throw new Error('No open shift exists for this cash register');
 
-    if (existingSale) {
-      return existingSale; 
-    }
-    const processedSale = await processSaleWithCoupon(sell);
-
-    const saleWithKey = {
-      ...processedSale,
-      idempotencyKey
-    };
-
-    const newSale = await store.add(saleWithKey);
-
-    try {
-      await deductInventoryFromSale(newSale.products, newSale.id, sell.companyId);
-    } catch (inventoryError) {
-      await store.remove(newSale.id);
-      const saleError = new Error(
-        `Error al descontar inventario: ${inventoryError.message}. La venta fue revertida.`
-      );
-      saleError.code = inventoryError.code;
-      return Promise.reject(saleError);
-    }
-
-    if (newSale.couponCode && newSale.couponId) {
-      const couponsController = require('../coupons/controller'); // eslint-disable-line global-require
-      try {
-        const mappedProducts = couponsController.mapSaleProductsForCouponDiscount(newSale.products);
-        await couponsController.recordCouponUsageForCompletedSale({
-          couponId: newSale.couponId,
-          couponCode: newSale.couponCode,
-          companyId: sell.companyId,
-          saleId: newSale.id,
-          subtotal: newSale.subtotal,
-          total: newSale.total,
-          products: mappedProducts,
-          customerId: sell.customerId ?? null,
-          customerPhone: sell.customerPhone,
-          customerEmail: sell.customerEmail
-        });
-      } catch (couponError) {
-        await restoreInventoryFromSale(newSale.products, newSale.id, sell.companyId);
-        await store.remove(newSale.id);
-        const saleError = new Error(
-          `Error al registrar cupón: ${couponError.message}. La venta fue revertida.`
-        );
-        return Promise.reject(saleError);
+      if (sell.customerId) {
+        const customer = await Customer.findOne({
+          _id: sell.customerId,
+          company: sell.companyId,
+          disable: false
+        }).session(session).select('_id');
+        if (!customer) throw new Error('Customer not found in company');
       }
-    }
 
-    return newSale;
+      const prepared = await prepareSale(sell, session);
+      const sale = await store.add({
+        idempotencyKey,
+        company: sell.companyId,
+        createdBy: sell.createdBy,
+        customer: sell.customerId || undefined,
+        cashRegister: sell.cashRegister,
+        shift: shift._id,
+        products: prepared.productSnapshots,
+        subtotal: prepared.subtotal,
+        totalTaxes: prepared.totalTaxes,
+        total: prepared.total,
+        couponCode: prepared.couponValidation?.coupon?.code,
+        couponId: prepared.couponValidation?.coupon?.id,
+        couponDiscount: prepared.couponDiscount,
+        finalTotal: prepared.finalTotal,
+        payment: prepared.payment,
+        change: prepared.payment.change,
+        status: 'confirmed'
+      }, session);
 
+      await reserveInventory(
+        prepared.productSnapshots,
+        sell.companyId,
+        sell.createdBy,
+        sale._id,
+        session
+      );
+      await recordCouponUsage(prepared, sale, sell.customerId, sell.companyId, session);
+      await createSaleMovement(sale, session);
+      await createSaleTicket(sale, prepared, session);
+      saleId = sale._id;
+    });
   } catch (error) {
-    const wrappedError = new Error(`Error adding sale: ${error.message}`);
-    wrappedError.code = error.code;
-    return Promise.reject(wrappedError);
+    if (error.code === 11000) {
+      const duplicate = await store.findByIdempotencyKey(idempotencyKey, sell.companyId);
+      if (duplicate) return duplicate;
+    }
+    throw new Error('Error adding sale: ' + error.message);
+  } finally {
+    await session.endSession();
   }
-  
+
+  return Sale.findById(saleId);
 }
 
-// NUEVA FUNCIÓN: Obtener datos históricos de una venta
-async function getSaleHistoricalData(saleId) {
-  try {
-    const sale = await store.getSaleById(saleId);
-    if (!sale) {
-      throw new Error('Sale not found');
-    }
-    
-    return {
-      saleId: sale.id,
-      date: sale.createdAt,
-      total: sale.total,
-      hasHistoricalData: sale.hasHistoricalData(),
-      products: sale.getProductsWithHistoricalData()
-    };
-    
-  } catch (error) {
-    return Promise.reject(new Error(`Error getting sale historical data: ${error.message}`));
-  }
+async function processSaleWithCoupon(saleData) {
+  const prepared = await prepareSale({
+    ...saleData,
+    payment: saleData.payment || { method: 'cash', cashReceived: Number.MAX_SAFE_INTEGER }
+  });
+  return {
+    products: prepared.productSnapshots,
+    subtotal: prepared.subtotal,
+    totalTaxes: prepared.totalTaxes,
+    total: prepared.total,
+    couponCode: prepared.couponValidation?.coupon?.code || null,
+    couponDiscount: prepared.couponDiscount,
+    couponId: prepared.couponValidation?.coupon?.id || null,
+    finalTotal: prepared.finalTotal
+  };
+}
+
+async function validateCouponForSale(couponCode, companyId, products, customerId = null) {
+  const snapshots = await createProductSnapshots(products, companyId);
+  const totals = calculateSnapshotTotals(snapshots);
+  return couponsController.validateCoupon(
+    couponCode,
+    companyId,
+    { ...totals, products },
+    customerId
+  );
+}
+
+async function calculateSaleTaxesWithSnapshots(products, companyId) {
+  const productSnapshots = await createProductSnapshots(products, companyId);
+  return { ...calculateSnapshotTotals(productSnapshots), productSnapshots };
+}
+
+async function calculateSaleTaxes(products, companyId) {
+  const result = await calculateSaleTaxesWithSnapshots(products, companyId);
+  return { subtotal: result.subtotal, totalTaxes: result.totalTaxes, total: result.total };
+}
+
+async function getSaleHistoricalData(saleId, companyId) {
+  const sale = await store.getSaleById(saleId, companyId);
+  if (!sale) throw new Error('Sale not found');
+  return {
+    saleId: sale.id,
+    date: sale.createdAt,
+    total: sale.total,
+    hasHistoricalData: sale.hasHistoricalData(),
+    products: sale.getProductsWithHistoricalData()
+  };
 }
 
 module.exports = {
   addSell,
-  listSales,
-  updateSell,
-  removeSell,
-  calculateSaleTaxes, 
-  calculateSaleTaxesWithSnapshots, 
+  listSales: store.list,
+  listSaleOperationsForReports: store.listSaleOperationsForReports,
+  updateSell: (sellId, sell, companyId) => store.update(sellId, sell, companyId),
+  removeSell: (sellId, companyId) => store.remove(sellId, companyId),
+  calculateSaleTaxes,
+  calculateSaleTaxesWithSnapshots,
   processSaleWithCoupon,
   validateCouponForSale,
-  createProductSnapshots, 
-  getSaleHistoricalData ,
+  createProductSnapshots,
+  getSaleHistoricalData,
+  normalizePayment,
+  calculateSnapshotTotals,
+  buildCouponUsageFilter
 };

@@ -11,6 +11,7 @@ const {
   validateUserUpdate
 } = require('../../middleware/validation');
 const router = express.Router();
+const { loginRateLimit } = require('../../middleware/rateLimit');
 
 const addUser = function (req, res) {
   const user = req.body;
@@ -35,7 +36,7 @@ const logout = function (req, res) {
   controller
     .logout(req)
     .then(data => {
-      response.success(req, res, data, 201);
+      response.success(req, res, data, 200);
     })
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);
@@ -95,8 +96,8 @@ const removeUser = function (req, res) {
 router.get('/', authenticateToken, requireRole(['admin']), listUsers);
 router.get('/:userId', authenticateToken, requireRole(['admin']), listUsers);
 router.post('/', authenticateToken, requireRole(['admin']), validateUserCreate, addUser);
-router.post('/login', controller.login);
-router.post('/register', authenticateToken, requireRole(['admin']), controller.register);
+router.post('/login', loginRateLimit, controller.login);
+router.post('/register', authenticateToken, requireRole(['admin']), validateUserCreate, controller.register);
 router.post('/logout', authenticateToken, logout);
 router.patch('/:userId', authenticateToken, requireRole(['admin']), validateUserUpdate, updateUser);
 router.delete('/:userId', authenticateToken, requireRole(['admin']), removeUser);

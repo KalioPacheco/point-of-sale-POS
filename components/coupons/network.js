@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 /* eslint-disable consistent-return */
 const express = require('express');
 const controller = require('./controller');
@@ -7,16 +6,20 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
-const { validateCoupon } = require('../../middleware/validation');
+const { validateCouponCreate, validateCouponUpdate } = require('../../middleware/validation');
+const Coupon = require('./model');
+const { requireCompanyScope, scopeResource, requireTenantParam } = require('../../middleware/tenant');
 
 const router = express.Router();
+const scopeCoupon = scopeResource(Coupon, 'id');
+router.use(authenticateToken, requireCompanyScope);
 
-router.post('/', validateCoupon, authenticateToken, requireRole(['admin', 'manager']), async (req, res) => { 
+router.post('/', validateCouponCreate, authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const couponData = {
       ...req.body,
-      company: req.body.company || req.user?.company,
-      createdBy: req.user?.id
+      company: req.companyId,
+      createdBy: req.user?._id || req.user?.id
     };
 
     const coupon = await controller.addCoupon(couponData);
@@ -29,8 +32,8 @@ router.post('/', validateCoupon, authenticateToken, requireRole(['admin', 'manag
 
 router.get('/', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
-    const { company, status, discountType, active, expired, code, name, limit } = req.query;
-    const companyId = company || req.user?.company;
+    const { status, discountType, active, expired, code, name, limit } = req.query;
+    const companyId = req.companyId;
     
     if (!companyId) {
       return response.error(req, res, 'Company ID is required', 400);
@@ -59,10 +62,10 @@ router.get('/', authenticateToken, requireRole(['admin', 'manager']), async (req
 });
 
 
-router.get('/:id', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
+router.get('/:id', authenticateToken, requireRole(['admin', 'manager']), scopeCoupon, async (req, res) => {
   try {
     const { id } = req.params;
-    const coupon = await controller.listCoupons(id);
+    const coupon = await controller.listCoupons(id, req.companyId);
     
     if (!coupon) {
       return response.error(req, res, 'Coupon not found', 404);
@@ -75,7 +78,7 @@ router.get('/:id', authenticateToken, requireRole(['admin', 'manager']), async (
 });
 
 
-router.put('/:id', validateCoupon, authenticateToken, requireRole(['admin', 'manager']), async (req, res) => { 
+router.put('/:id', validateCouponUpdate, authenticateToken, requireRole(['admin', 'manager']), scopeCoupon, async (req, res) => {
   try {
     const { id } = req.params;
     const updatedCoupon = await controller.updateCoupon(id, req.body);
@@ -85,7 +88,7 @@ router.put('/:id', validateCoupon, authenticateToken, requireRole(['admin', 'man
   }
 });
 
-router.delete('/:id', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole(['admin', 'manager']), scopeCoupon, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await controller.removeCoupon(id);
@@ -100,12 +103,11 @@ router.post('/validate', authenticateToken, requireRole(['admin', 'manager']), a
   try {
     const { 
       code, 
-      company, 
       saleData,
       customerId
     } = req.body;
 
-    const companyId = company || req.user?.company;
+    const companyId = req.companyId;
     
     if (!code || !companyId || !saleData) {
       return response.error(req, res, 'Código de cupón, empresa y datos de venta son requeridos', 400);
@@ -131,12 +133,11 @@ router.post('/apply', authenticateToken, requireRole(['admin', 'manager']), asyn
   try {
     const {
       code,
-      company,
       saleData,
       customerId
     } = req.body;
 
-    const companyId = company || req.user?.company;
+    const companyId = req.companyId;
 
     if (!code || !companyId || !saleData) {
       return response.error(req, res, 'Datos incompletos para aplicar cupón', 400);
@@ -161,8 +162,7 @@ router.post('/apply', authenticateToken, requireRole(['admin', 'manager']), asyn
 
 router.get('/active/list', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
-    const { company } = req.query;
-    const companyId = company || req.user?.company;
+    const companyId = req.companyId;
     
     if (!companyId) {
       return response.error(req, res, 'Company ID is required', 400);
@@ -177,8 +177,7 @@ router.get('/active/list', authenticateToken, requireRole(['admin', 'manager']),
 
 router.get('/cashier/list', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
-    const { company } = req.query;
-    const companyId = company || req.user?.company;
+    const companyId = req.companyId;
     
     if (!companyId) {
       return response.error(req, res, 'Company ID is required', 400);
@@ -195,8 +194,7 @@ router.get('/cashier/list', authenticateToken, requireRole(['admin', 'manager'])
 router.get('/search/:term', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { term } = req.params;
-    const { company } = req.query;
-    const companyId = company || req.user?.company;
+    const companyId = req.companyId;
     
     if (!companyId) {
       return response.error(req, res, 'Company ID is required', 400);
@@ -228,8 +226,7 @@ router.post('/generate-code', authenticateToken, requireRole(['admin', 'manager'
 router.get('/check-code/:code', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
     const { code } = req.params;
-    const { company } = req.query;
-    const companyId = company || req.user?.company;
+    const companyId = req.companyId;
     
     if (!companyId) {
       return response.error(req, res, 'Company ID is required', 400);
@@ -246,7 +243,7 @@ router.get('/check-code/:code', authenticateToken, requireRole(['admin', 'manage
   }
 });
 
-router.get('/stats/:id', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
+router.get('/stats/:id', authenticateToken, requireRole(['admin', 'manager']), scopeCoupon, async (req, res) => {
   try {
     const { id } = req.params;
     const stats = await controller.getCouponStats(id);
@@ -257,7 +254,7 @@ router.get('/stats/:id', authenticateToken, requireRole(['admin', 'manager']), a
 });
 
 
-router.get('/report/:companyId', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
+router.get('/report/:companyId', authenticateToken, requireRole(['admin', 'manager']), requireTenantParam('companyId'), async (req, res) => {
   try {
     const { companyId } = req.params;
     const { startDate, endDate } = req.query;
@@ -271,8 +268,8 @@ router.get('/report/:companyId', authenticateToken, requireRole(['admin', 'manag
 
 router.get('/customer/history', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
-    const { customerId, company } = req.query;
-    const companyId = company || req.user?.company;
+    const { customerId } = req.query;
+    const companyId = req.companyId;
     
     if (!customerId || !companyId) {
       return response.error(req, res, 'Customer ID and Company ID are required', 400);
@@ -288,7 +285,7 @@ router.get('/customer/history', authenticateToken, requireRole(['admin', 'manage
 
 router.post('/maintenance/expire', authenticateToken, requireRole(['admin', 'manager']), async (req, res) => {
   try {
-    const result = await controller.expireCoupons();
+    const result = await controller.expireCoupons(req.companyId);
     return response.success(req, res, result, 200);
   } catch (error) {
     response.error(req, res, error.message, 500);
@@ -301,11 +298,10 @@ router.post('/calculate-sale', authenticateToken, requireRole(['admin', 'manager
     const {
       saleData,
       couponCode,
-      company,
       customerId
     } = req.body;
 
-    const companyId = company || req.user?.company;
+    const companyId = req.companyId;
 
     if (!saleData || !companyId) {
       return response.error(req, res, 'Sale data and company are required', 400);

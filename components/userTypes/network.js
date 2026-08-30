@@ -6,7 +6,7 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
-const { validateUserType } = require('../../middleware/validation');
+const { validateUserTypeCreate, validateUserTypeUpdate } = require('../../middleware/validation');
 
 const router = express.Router();
 
@@ -81,8 +81,8 @@ const removeType = function (req, res) {
 
 router.get('/', authenticateToken, requireRole(['admin']), listTypes);
 router.get('/:typeId', authenticateToken, requireRole(['admin']), listTypes);
-router.post('/', authenticateToken, requireRole(['admin']), validateUserType, addType);           
-router.patch('/:typeId', authenticateToken, requireRole(['admin']), validateUserType, updateType);
+router.post('/', authenticateToken, requireRole(['admin']), validateUserTypeCreate, addType);
+router.patch('/:typeId', authenticateToken, requireRole(['admin']), validateUserTypeUpdate, updateType);
 router.delete('/:typeId', authenticateToken, requireRole(['admin']), removeType);
 
 module.exports = router;

@@ -8,6 +8,8 @@ const productSnapshotSchema = new Schema({
     ref: 'Products',
     required: true
   },
+  variantId: { type: Schema.ObjectId },
+  variantName: String,
   quantity: {
     type: Number,
     required: true,
@@ -34,8 +36,8 @@ const productSnapshotSchema = new Schema({
 }, { _id: false });
 
 const mySchema = new Schema({
-  total: Number,
-  change: Number,
+  total: { type: Number, required: true, min: 0 },
+  change: { type: Number, required: true, min: 0, default: 0 },
   refund: {
     type: Boolean,
     default: false,
@@ -43,11 +45,17 @@ const mySchema = new Schema({
 
   idempotencyKey: {
     type: String,
-    unique: true,
-    sparse: true
+    required: true
   },
   
-  products: [productSnapshotSchema],
+  products: {
+    type: [productSnapshotSchema],
+    required: true,
+    validate: {
+      validator: products => Array.isArray(products) && products.length > 0,
+      message: 'Sale must contain at least one product'
+    }
+  },
   oldProducts: [
     {
       type: Schema.ObjectId,
@@ -71,19 +79,51 @@ const mySchema = new Schema({
   createdBy: {
     type: Schema.ObjectId,
     ref: 'Users',
+    required: true,
   },
   company: {
     type: Schema.ObjectId,
     ref: 'Companies',
+    required: true,
+  },
+  cashRegister: { type: String, required: true },
+  shift: { type: Schema.ObjectId, ref: 'CashRegisterShifts', required: true },
+  customer: { type: Schema.ObjectId, ref: 'Customers' },
+  status: {
+    type: String,
+    enum: ['confirmed', 'refunded', 'cancelled'],
+    default: 'confirmed'
+  },
+  refundInfo: {
+    refundedAt: Date,
+    refundedBy: { type: Schema.ObjectId, ref: 'Users' },
+    reason: String,
+    shift: { type: Schema.ObjectId, ref: 'CashRegisterShifts' },
+    cashRegister: String
+  },
+  payment: {
+    method: {
+      type: String,
+      enum: ['cash', 'card', 'transfer', 'mixed'],
+      required: true
+    },
+    amount: { type: Number, required: true, min: 0 },
+    cashReceived: { type: Number, min: 0 },
+    change: { type: Number, min: 0, default: 0 },
+    reference: String,
+    cashAmount: { type: Number, min: 0, default: 0 },
+    cardAmount: { type: Number, min: 0, default: 0 }
   },
 
   subtotal: {
     type: Number,
-    default: 0 
+    required: true,
+    min: 0
   },
   totalTaxes: {
     type: Number,
-    default: 0 
+    required: true,
+    min: 0
   },
   
   couponCode: String,
@@ -95,8 +135,10 @@ const mySchema = new Schema({
     type: Schema.ObjectId,
     ref: 'Coupons'
   },
-  finalTotal: Number 
+  finalTotal: { type: Number, required: true, min: 0 }
 });
+
+mySchema.index({ company: 1, idempotencyKey: 1 }, { unique: true });
 
 
 mySchema.methods.calculateTaxesFromSnapshots = function calculateTaxesFromSnapshots(couponData = null) {

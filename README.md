@@ -17,7 +17,10 @@ API del sistema POS con autenticación JWT y aislamiento multiempresa.
 ## Autenticación y roles
 
 - Login: `POST /users/login` (público)
-- Rutas de administración: requieren token JWT y rol `admin`.
+- `vendedor`: POS, catálogo de lectura, clientes sin eliminación, turno propio y tickets propios.
+- `manager`: catálogo, inventario, cupones, movimientos, cortes, reportes y devoluciones.
+- `admin`: capacidades de manager más usuarios, empresa, impuestos y compatibilidad de tipos de usuario.
+- `userTypes` y `privileges` son compatibilidad legado; la autorización efectiva usa `role`.
 
 ## Endpoints
 
@@ -149,16 +152,29 @@ Base: `/customer`
   - Actualiza datos del cliente en scope de empresa.
 
 - `DELETE /:customerId`
-  - Auth: JWT + `admin|manager|vendedor`
+  - Auth: JWT + `admin|manager`
   - Soft-delete (`disable=true`) en scope.
+
+## Quality gates
+
+Frontend and backend workflows run lint, typecheck, tests and build on pushes and
+pull requests. Backend CI also starts MongoDB as a replica set and runs the E2E
+checkout, tenant and role matrix without production credentials.
+
+## Database migrations
+
+See [MIGRATIONS.md](MIGRATIONS.md). Always run `npm run migrate:plan` before
+applying and explicitly confirm the target database name.
 
 ## Formato general de respuesta
 
-Salvo login/registro, la API usa envelope:
+La API usa un envelope compatible con código y correlación:
 
-- success: `{ "error": "", "body": any }`
-- error: `{ "error": string, "body": "" }`
+- success: `{ "error": "", "body": any, "requestId": string }`
+- error: `{ "error": string, "code": string, "message": string, "details"?: array, "body": "", "requestId": string }`
 
+Los errores de validación responden `422`; conflictos de estado o duplicados `409`;
+recursos inexistentes `404`; y los errores internos no exponen detalles sensibles.
 ## Calidad y validacion local
 
 Scripts disponibles:
