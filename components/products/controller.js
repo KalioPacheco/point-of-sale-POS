@@ -33,28 +33,28 @@ function removeProduct(productId, companyId = null) {
   return store.remove(productId, companyId);
 }
 
-function addStock(productId, quantity, userId, reason, companyId = null) {
+function addStock(productId, quantity, userId, reason, companyId = null, options = {}) {
   if (!productId || !quantity || quantity <= 0) {
     return Promise.reject('productId and positive quantity are required');
   }
   
-  return store.addStock(productId, quantity, userId, reason, companyId);
+  return store.addStock(productId, quantity, userId, reason, companyId, options);
 }
 
-function reduceStock(productId, quantity, userId, reason, companyId = null) {
+function reduceStock(productId, quantity, userId, reason, companyId = null, options = {}) {
   if (!productId || !quantity || quantity <= 0) {
     return Promise.reject('productId and positive quantity are required');
   }
   
-  return store.reduceStock(productId, quantity, userId, reason, companyId);
+  return store.reduceStock(productId, quantity, userId, reason, companyId, options);
 }
 
-function setStock(productId, quantity, reason, companyId = null) {
+function setStock(productId, quantity, reason, companyId = null, userId = null, options = {}) {
   if (!productId || quantity < 0) {
     return Promise.reject('productId and non-negative quantity are required');
   }
   
-  return store.setStock(productId, quantity, null, reason, companyId);
+  return store.setStock(productId, quantity, userId, reason, companyId, options);
 }
 
 function getStockHistory(productId, companyId = null) {

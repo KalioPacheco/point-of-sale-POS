@@ -114,7 +114,9 @@ const addStock = function addStock(req, res) {
   }
 
   controller
-    .addStock(productId, quantity, req.user.userId, finalReason, companyId)
+    .addStock(productId, quantity, req.user.userId, finalReason, companyId, {
+      idempotencyKey: req.get('Idempotency-Key')
+    })
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -140,7 +142,9 @@ const reduceStock = function reduceStock(req, res) {
   }
 
   controller
-    .reduceStock(productId, quantity, req.user.userId, finalReason, companyId)
+    .reduceStock(productId, quantity, req.user.userId, finalReason, companyId, {
+      idempotencyKey: req.get('Idempotency-Key')
+    })
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -162,7 +166,9 @@ const setStock = function setStock(req, res) {
   }
 
   controller
-    .setStock(productId, quantity, reason || 'Stock adjustment', companyId)
+    .setStock(productId, quantity, reason || 'Stock adjustment', companyId, req.user.userId, {
+      idempotencyKey: req.get('Idempotency-Key'), expectedStock: req.body.expectedStock
+    })
     .then(data => {
       response.success(req, res, data, 200);
     })

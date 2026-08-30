@@ -1,4 +1,6 @@
 function inferStatus(error, fallback = 500) {
+  if (error?.code === 'STOCK_CONFLICT') return 409;
+  if (error?.code === 'INSUFFICIENT_STOCK') return 409;
   if (error?.code === 11000) return 409;
   if (error?.name === 'ValidationError') return 422;
   if (error?.name === 'CastError') return 400;
