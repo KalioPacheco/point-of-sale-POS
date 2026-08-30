@@ -20,6 +20,7 @@ const CashMovement = require('../components/cashMovements/model');
 const Sale = require('../components/sales/model');
 const Ticket = require('../components/ticket/model');
 const routes = require('../routes');
+const { createHttpAccess } = require('../middleware/httpAccess');
 const productStore = require('../components/products/store');
 const cutStore = require('../components/cashRegisterCuts/store');
 const movementStore = require('../components/cashMovements/store');
@@ -309,6 +310,7 @@ test.before(async () => {
   await mongoose.connection.syncIndexes();
 
   const app = express();
+  app.use(createHttpAccess('http://localhost:5173'));
   app.use(express.json());
   app.use(passport.initialize());
   routes(app);
