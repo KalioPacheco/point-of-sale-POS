@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const model = require('./model');
 const controller = require('./controller');
 const store = require('./store');
-const { validateCashMovement } = require('../../middleware/validation');
+const { validateCashMovementCreate } = require('../../middleware/validation');
 const { CASH_MOVEMENT_TYPES } = require('./types');
 
 async function runMiddlewares(middlewares, req) {
@@ -15,6 +15,7 @@ async function runMiddlewares(middlewares, req) {
       this.statusCode = code;
       return this;
     },
+    send(payload) { return this.json(payload); },
     json(payload) {
       this.payload = payload;
       return this;
@@ -56,10 +57,11 @@ test('cash movement model enum stays aligned with canonical types', () => {
 });
 
 test('cash movement validation accepts canonical API type and rejects UI alias', async () => {
-  const validRes = await runMiddlewares(validateCashMovement, {
+  const validRes = await runMiddlewares(validateCashMovementCreate, {
     body: {
       type: 'initial_cash',
       amount: 100,
+      concept: 'Fondo inicial',
       description: 'Fondo inicial',
     },
   });
@@ -67,16 +69,17 @@ test('cash movement validation accepts canonical API type and rejects UI alias',
   assert.equal(validRes.statusCode, 200);
   assert.equal(validRes.payload, null);
 
-  const invalidRes = await runMiddlewares(validateCashMovement, {
+  const invalidRes = await runMiddlewares(validateCashMovementCreate, {
     body: {
       type: 'entrada',
       amount: 100,
+      concept: 'Fondo inicial',
       description: 'Fondo inicial',
     },
   });
 
-  assert.equal(invalidRes.statusCode, 400);
-  assert.match(invalidRes.payload.error, /Datos inv.lidos/);
+  assert.equal(invalidRes.statusCode, 422);
+  assert.equal(invalidRes.payload.code, 'VALIDATION_ERROR');
 });
 
 test('cash movement controller normalizes legacy aliases before persisting', async (t) => {

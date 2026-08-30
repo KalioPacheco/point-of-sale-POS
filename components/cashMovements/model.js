@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
 const {
+  Counter,
+  companyToken,
+  counterKey,
+  formatSequence
+} = require('../operationalCounters/model');
+const {
   CASH_MOVEMENT_TYPES,
   CASH_MOVEMENT_IN_TYPES,
   CASH_MOVEMENT_OUT_TYPES,
@@ -28,10 +34,12 @@ const cashMovementSchema = new Schema({
     required: true,
   },
   description: String,
-  paymentMethod: {
-    type: String,
-    enum: ['cash', 'card', 'mixed'],
-    default: 'cash',
+  
+
+  paymentMethod: { 
+    type: String, 
+    enum: ['cash', 'card', 'transfer', 'mixed'],
+    default: 'cash'
   },
   user: {
     type: Schema.ObjectId,
@@ -47,6 +55,9 @@ const cashMovementSchema = new Schema({
     type: Schema.ObjectId,
     ref: 'Sales',
   },
+  shift: { type: Schema.ObjectId, ref: 'CashRegisterShifts' },
+  
+
   receiptNumber: String,
   authorized: {
     type: Boolean,
@@ -65,23 +76,25 @@ const cashMovementSchema = new Schema({
   timestamps: true,
 });
 
-cashMovementSchema.statics.generateMovementNumber = async function generateMovementNumber() {
+cashMovementSchema.statics.generateMovementNumber = async function generateMovementNumber(
+  company,
+  cashRegister = 'GLOBAL',
+  session = null
+) {
+  if (!company) throw new Error('Company is required to generate a movement number');
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-  const prefix = `MOV-${dateStr}`;
-
+  const prefix = `MOV-${companyToken(company)}-${cashRegister}-${dateStr}`;
+  
   const lastMovement = await this.findOne({
-    movementNumber: { $regex: `^${prefix}` },
-  }).sort({ movementNumber: -1 });
-
-  let sequence = 1;
-  if (lastMovement && lastMovement.movementNumber) {
-    const parts = lastMovement.movementNumber.split('-');
-    const lastSequence = parseInt(parts[parts.length - 1], 10) || 0;
-    sequence = lastSequence + 1;
-  }
-
-  return `${prefix}-${sequence.toString().padStart(4, '0')}`;
+    company,
+    movementNumber: { $regex: `^${prefix}` }
+  }).sort({ movementNumber: -1 }).session(session).lean();
+  const baseline = Number(lastMovement?.movementNumber?.split('-').pop()) || 0;
+  const sequence = await Counter.next(counterKey({
+    kind: 'movement', company, cashRegister, date: dateStr
+  }), baseline, session);
+  return formatSequence(prefix, sequence, 4);
 };
 
 cashMovementSchema.methods.getMovementSign = function getMovementSign() {

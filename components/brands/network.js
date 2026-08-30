@@ -4,10 +4,12 @@ const controller = require('./controller');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
-  requireRole,
-  requireTenant
+  requireRole
 } = require('../../middleware/auth');
-const { validateBrand } = require('../../middleware/validation');
+const { validateBrandCreate, validateBrandUpdate } = require('../../middleware/validation');
+const Brand = require('./model');
+const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
+const scopeBrand = scopeResource(Brand, 'brandId');
 
 
 const router = express.Router();
@@ -15,9 +17,8 @@ const router = express.Router();
 const addBrand = function addBrand(req, res) {
   const brand = req.body;
   const companyId = Helper.getCompanyId(req);
-  delete brand.companyId;
-  delete brand.company;
   brand.company = companyId;
+  brand.createdBy = Helper.getUserId(req);
   controller
     .addBrand(brand)
     .then(data => {
@@ -71,10 +72,10 @@ const removeBrand = function removeBrand(req, res) {
 };
 
 
-router.get('/', authenticateToken, requireTenant, requireRole(['admin', 'manager']), lisBrands);
-router.get('/:brandId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), lisBrands);
-router.post('/', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateBrand, addBrand);
-router.patch('/:brandId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), validateBrand, updateBrand);
-router.delete('/:brandId', authenticateToken, requireTenant, requireRole(['admin', 'manager']), removeBrand);
+router.get('/', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), lisBrands);
+router.get('/:brandId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, lisBrands);
+router.post('/', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), validateBrandCreate, addBrand);
+router.patch('/:brandId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, validateBrandUpdate, updateBrand);
+router.delete('/:brandId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, removeBrand);
 
 module.exports = router;

@@ -40,7 +40,7 @@ function removeTaxConfig(taxConfigId, companyId) {
   return store.removeTaxConfig(taxConfigId, companyId);
 }
 
-function setProductTax(productId, taxConfigId, customRate, companyId, userId) {
+async function setProductTax(productId, taxConfigId, customRate, companyId, userId) {
   if (!productId || !taxConfigId || customRate === undefined || !companyId) {
     return Promise.reject(new Error('Product ID, tax config ID, custom rate, and company ID are required'));
   }
@@ -49,7 +49,20 @@ function setProductTax(productId, taxConfigId, customRate, companyId, userId) {
     return Promise.reject(new Error('Custom rate cannot be negative'));
   }
 
-  return store.setProductTax(productId, taxConfigId, customRate, companyId, userId);
+  const result = await store.setProductTax(
+    productId,
+    taxConfigId,
+    customRate,
+    companyId,
+    userId
+  );
+  const { Product } = require('../products/model'); // eslint-disable-line global-require
+  const rate = Number(result.customRate ?? result.taxConfig?.defaultRate ?? 0);
+  await Product.updateOne(
+    { _id: productId, company: companyId },
+    { $set: { taxRate: rate, taxExempt: rate <= 0, updated: true, updatedAt: new Date() } }
+  );
+  return result;
 }
 
 function getProductTaxes(productId, companyId) {
@@ -60,12 +73,23 @@ function getProductTaxes(productId, companyId) {
   return store.getProductTaxes(productId, companyId);
 }
 
-function removeProductTax(productId, taxConfigId, companyId) {
+async function removeProductTax(productId, taxConfigId, companyId) {
   if (!productId || !taxConfigId || !companyId) {
     return Promise.reject(new Error('Product ID, tax config ID, and company ID are required'));
   }
 
-  return store.removeProductTax(productId, taxConfigId, companyId);
+  const result = await store.removeProductTax(productId, taxConfigId, companyId);
+  const remaining = await store.getProductTaxes(productId, companyId);
+  const rate = remaining.reduce(
+    (sum, item) => sum + Number(item.customRate ?? item.taxConfig?.defaultRate ?? 0),
+    0
+  );
+  const { Product } = require('../products/model'); // eslint-disable-line global-require
+  await Product.updateOne(
+    { _id: productId, company: companyId },
+    { $set: { taxRate: rate, taxExempt: rate <= 0, updated: true, updatedAt: new Date() } }
+  );
+  return result;
 }
 
 
@@ -90,22 +114,8 @@ function calculateSaleTaxes(products, companyId) {
     return Promise.reject(new Error('Company ID is required'));
   }
 
-  const errors = [];
-  products.forEach((product, index) => {
-    if (!product.productId || product.quantity === undefined || product.price === undefined) {
-      errors.push(`Product at index ${index} is missing required fields (productId, quantity, price)`);
-    }
-    
-    if (product.quantity <= 0 || product.price < 0) {
-      errors.push(`Product at index ${index} has invalid quantity or price`);
-    }
-  });
-
-  if (errors.length > 0) {
-    return Promise.reject(new Error(errors.join(', ')));
-  }
-
-  return store.calculateSaleTaxes(products, companyId);
+  const salesController = require('../sales/controller'); // eslint-disable-line global-require
+  return salesController.calculateSaleTaxes(products, companyId);
 }
 
 async function getProductWithTaxes(productId, companyId) {

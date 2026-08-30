@@ -116,16 +116,18 @@ couponSchema.statics.generateCode = function generateCode(prefix = 'COUP') {
   return `${prefix}${timestamp}${random}`.toUpperCase();
 };
 
-couponSchema.statics.findValidCoupon = async function findValidCoupon(code, companyId) {
+couponSchema.statics.findValidCoupon = async function findValidCoupon(code, companyId, session = null) {
   const now = new Date();
   
-  return await this.findOne({
+  const query = this.findOne({
     code: code.toUpperCase(),
     company: companyId,
     disable: false,
     status: 'active',
     expirationDate: { $gte: now }
   });
+  if (session) query.session(session);
+  return query;
 };
 
 couponSchema.methods.isValidForSale = function isValidForSale(saleData, customerId = null) {

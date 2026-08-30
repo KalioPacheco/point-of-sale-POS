@@ -85,9 +85,13 @@ const productSchema = new Schema({
   name: String,
   code: {
     type: String,
-    index: true,
+    trim: true,
+    uppercase: true,
+    set: value => typeof value === 'string' && value.trim() ? value.trim() : undefined
   },
+  sku: { type: String, trim: true },
   price: Number,
+  cost: { type: Number, default: 0, min: 0 },
   folio: {
     type: Number,
     default: 1,
@@ -103,7 +107,7 @@ const productSchema = new Schema({
   company: {
     type: Schema.ObjectId,
     ref: 'Companies',
-    required: false
+    required: true
   },
   description: String,
   stock: Number, 
@@ -150,6 +154,11 @@ const productSchema = new Schema({
     default: false
   }
 });
+
+productSchema.index(
+  { company: 1, code: 1 },
+  { unique: true, partialFilterExpression: { code: { $gt: '' } } }
+);
 
 const StockHistory = mongoose.model(
   'StockHistory',

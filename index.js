@@ -1,11 +1,18 @@
 const express = require('express');
 const passport = require('passport');
+const { randomUUID } = require('node:crypto');
 require('dotenv').config();
 require('./passport');
 const router = require('./routes');
 const db = require('./database');
 
 const app = express();
+
+app.use((req, res, next) => {
+  req.id = req.headers['x-request-id'] || randomUUID();
+  res.setHeader('X-Request-Id', req.id);
+  next();
+});
 
 app.use(express.json({ limit: '1mb' }));
 app.use(
@@ -15,9 +22,19 @@ app.use(
 app.use(passport.initialize());
 
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
+    .split(',')
+    .map(origin => origin.trim());
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+  }
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, idempotency-key');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.header('X-Content-Type-Options', 'nosniff');
+  res.header('X-Frame-Options', 'DENY');
+  res.header('Referrer-Policy', 'no-referrer');
   next();
 });
 

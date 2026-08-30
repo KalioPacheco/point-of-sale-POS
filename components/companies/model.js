@@ -7,6 +7,8 @@ const mySchema = new Schema({
   rfc: {
     type: String,
   },
+  phone: String,
+  email: String,
   address: {
     street: String,
     number: {

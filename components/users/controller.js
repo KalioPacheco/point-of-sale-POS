@@ -2,9 +2,10 @@ const store = require('./store');
 const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const Users = require('./model');
+const { clearLoginAttempts } = require('../../middleware/rateLimit');
 const Companies = require('../companies/model');
 
-const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_EXPIRES_IN || '8h';
+const ACCESS_TOKEN_TTL = process.env.JWT_EXPIRES_IN || process.env.JWT_ACCESS_EXPIRES_IN || '1h';
 
 function buildAuthPayload(user, company) {
   return {
@@ -86,6 +87,7 @@ function login(req, res, next) {
         });
       }
 
+      clearLoginAttempts(req);
       return res.status(200).json({
         ...buildAuthResponse(user, company),
         message: 'Login exitoso',
@@ -101,15 +103,27 @@ function login(req, res, next) {
   })(req, res, next);
 }
 
-function register(req, res, next) {
+function register(req, res) {
   const { userName, password, name, lastNames, role } = req.body;
+  const company = req.user?.company;
+  const createdBy = req.user?._id || req.user?.userId || req.user?.id;
+
+  if (!company) {
+    return res.status(403).json({
+      success: false,
+      message: 'Company scope is required',
+      code: 'COMPANY_SCOPE_REQUIRED'
+    });
+  }
 
   const newUser = new Users({
     userName,
     password,
     name,
     lastNames,
-    role
+    role,
+    company,
+    createdBy
   });
 
   newUser.save()
