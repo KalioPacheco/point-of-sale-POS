@@ -14,22 +14,22 @@ function listCategories(categoryId, companyId) {
   return store.list(categoryId, companyId);
 }
 
-function updateCategory(categoryId, category) {
-  if (!categoryId || !category) {
+function updateCategory(categoryId, category, companyId) {
+  if (!categoryId || !category || !companyId) {
     return Promise.reject(
       `categoryId or category is undefined. categoryId is: ${categoryId}, category is: ${JSON.stringify(
         category,
       )}`,
     );
   }
-  return store.update(categoryId, category);
+  return store.update(categoryId, category, companyId);
 }
 
-function removeCategory(categoryId) {
-  if (!categoryId) {
+function removeCategory(categoryId, companyId) {
+  if (!categoryId || !companyId) {
     return Promise.reject('categoryId is undefined');
   }
-  return store.remove(categoryId);
+  return store.remove(categoryId, companyId);
 }
 
 module.exports = {

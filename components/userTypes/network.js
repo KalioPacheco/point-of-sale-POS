@@ -1,7 +1,6 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
@@ -80,10 +79,10 @@ const removeType = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listTypes);
-router.get('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listTypes);
-router.post('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserTypeCreate, addType);
-router.patch('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserTypeUpdate, updateType);
-router.delete('/:typeId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), removeType);
+router.get('/', authenticateToken, requireRole(['admin']), listTypes);
+router.get('/:typeId', authenticateToken, requireRole(['admin']), listTypes);
+router.post('/', authenticateToken, requireRole(['admin']), validateUserTypeCreate, addType);
+router.patch('/:typeId', authenticateToken, requireRole(['admin']), validateUserTypeUpdate, updateType);
+router.delete('/:typeId', authenticateToken, requireRole(['admin']), removeType);
 
 module.exports = router;

@@ -1,7 +1,6 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
@@ -47,9 +46,10 @@ const updateBrand = function updateBrand(req, res) {
   const { brandId } = req.params;
   const brand = req.body;
   const companyId = Helper.getCompanyId(req);
-  brand.companyId = companyId;
+  delete brand.companyId;
+  delete brand.company;
   controller
-    .updateBrand(brandId, brand)
+    .updateBrand(brandId, brand, companyId)
     .then(product => {
       response.success(req, res, product, 200);
     })
@@ -60,8 +60,9 @@ const updateBrand = function updateBrand(req, res) {
 
 const removeBrand = function removeBrand(req, res) {
   const { brandId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   controller
-    .removeBrand(brandId)
+    .removeBrand(brandId, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -71,10 +72,10 @@ const removeBrand = function removeBrand(req, res) {
 };
 
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), lisBrands);
-router.get('/:brandId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, lisBrands);
-router.post('/', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), validateBrandCreate, addBrand);
-router.patch('/:brandId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, validateBrandUpdate, updateBrand);
-router.delete('/:brandId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, removeBrand);
+router.get('/', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), lisBrands);
+router.get('/:brandId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, lisBrands);
+router.post('/', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), validateBrandCreate, addBrand);
+router.patch('/:brandId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, validateBrandUpdate, updateBrand);
+router.delete('/:brandId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeBrand, removeBrand);
 
 module.exports = router;

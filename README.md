@@ -175,3 +175,17 @@ La API usa un envelope compatible con código y correlación:
 
 Los errores de validación responden `422`; conflictos de estado o duplicados `409`;
 recursos inexistentes `404`; y los errores internos no exponen detalles sensibles.
+## Calidad y validacion local
+
+Scripts disponibles:
+
+- `pnpm lint`: lint del backend.
+- `pnpm lintfix`: autocorreccion de lint cuando aplica.
+- `pnpm test`: pruebas con `node --test`.
+- `pnpm check`: ejecuta `lint + test`.
+
+Flujo recomendado antes de merge:
+
+1. `pnpm lint`
+2. `pnpm test`
+3. `pnpm check`

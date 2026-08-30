@@ -29,9 +29,11 @@ async function listBrands(brandId, companyId) {
   return brands;
 }
 
-async function updateBrand(brandId, data) {
+async function updateBrand(brandId, data, companyId) {
   const foundBrand = await Model.findOne({
     _id: brandId,
+    company: companyId,
+    disable: false,
   });
 
   if (!foundBrand) {
@@ -53,9 +55,11 @@ async function updateBrand(brandId, data) {
   return foundBrand.save();
 }
 
-async function removeBrand(brandId) {
+async function removeBrand(brandId, companyId) {
   const foundBrand = await Model.findOne({
     _id: brandId,
+    company: companyId,
+    disable: false,
   });
 
   if (!foundBrand) {

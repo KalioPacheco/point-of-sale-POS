@@ -55,6 +55,10 @@ const mySchema = new Schema(
       type: String,
       default: 'vendedor',
       enum: ['vendedor', 'admin', 'manager'] // Valores permitidos
+    },
+    tokenVersion: {
+      type: Number,
+      default: 0,
     }
   },
   { timestamps: true },

@@ -1,4 +1,5 @@
 const { body, validationResult } = require('express-validator');
+const { CASH_MOVEMENT_TYPES } = require('../components/cashMovements/types');
 
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
@@ -71,7 +72,9 @@ const customerFields = optional => [
   body('email').optional({ checkFalsy: true }).isEmail().withMessage('Email invalido'),
   body('phone').optional().isString(),
   body('rfc').optional().isString(),
-  body('address').optional().isObject().withMessage('Direccion invalida'),
+  body('address').optional().custom(value => typeof value === 'string' || (value !== null && typeof value === 'object' && !Array.isArray(value))).withMessage('Direccion invalida'),
+  body('ticketStoreConfig').optional().isObject(),
+  body('ticketStoreConfig.email').optional({ checkFalsy: true }).isEmail(),
   ...forbiddenTenantFields,
   handleValidationErrors
 ];
@@ -102,7 +105,9 @@ const validateUserUpdate = [
 const companyFields = optional => [
   body('name')[optional ? 'optional' : 'exists']().isString().trim().notEmpty().withMessage('Nombre de empresa requerido'),
   body('rfc').optional().isString().trim(),
-  body('address').optional().isObject().withMessage('Direccion invalida'),
+  body('address').optional().custom(value => typeof value === 'string' || (value !== null && typeof value === 'object' && !Array.isArray(value))).withMessage('Direccion invalida'),
+  body('ticketStoreConfig').optional().isObject(),
+  body('ticketStoreConfig.email').optional({ checkFalsy: true }).isEmail(),
   body('phone').optional().isString(),
   body('email').optional({ checkFalsy: true }).isEmail().withMessage('Email invalido'),
   body('disable').optional().isBoolean(),
@@ -145,10 +150,7 @@ const taxFields = optional => [
 ];
 
 const validateCashMovementCreate = [
-  body('type').isIn([
-    'entrada', 'salida', 'sale', 'expense', 'withdrawal',
-    'initial_cash', 'change_denomination', 'refund', 'other'
-  ]).withMessage('Tipo invalido'),
+  body('type').isIn(CASH_MOVEMENT_TYPES).withMessage('Tipo invalido'),
   body('amount').isFloat({ gt: 0 }).withMessage('Monto debe ser mayor a 0'),
   body('concept').isString().trim().notEmpty().withMessage('Concepto requerido'),
   body('description').optional().isString(),

@@ -92,7 +92,7 @@ async function updateUser(userId, data, companyId) {
     foundBrand.name = name;
   }
   if (photo) {
-    foundBrand.photo = name;
+    foundBrand.photo = photo;
   }
   if (lastNames) {
     foundBrand.lastNames = lastNames;
@@ -137,9 +137,30 @@ async function removeUser(userId, companyId) {
   return sanitizeUser(savedUser);
 }
 
+async function logout(userId) {
+  if (!userId) {
+    throw new Error('Usuario no autenticado');
+  }
+
+  const user = await Model.findByIdAndUpdate(userId, {
+    $inc: { tokenVersion: 1 },
+    $set: { updated: true, updatedAt: new Date() }
+  }, { new: true });
+
+  if (!user) {
+    throw new Error('Usuario no encontrado');
+  }
+
+  return {
+    invalidated: true,
+    message: 'Sesión invalidada correctamente',
+  };
+}
+
 module.exports = {
   add: addUser,
   list: listUsers,
   update: updateUser,
   remove: removeUser,
+  logout,
 };

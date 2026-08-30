@@ -176,6 +176,11 @@ test.after(async () => {
 
 test('checkout is atomic, authoritative and idempotent', async () => {
   const fixture = await createFixture();
+  fixture.company.ticketStoreConfig = {
+    name: 'Sucursal QA', address: 'Direccion ticket QA', phone: '5551234567',
+    email: 'qa@example.com', taxId: 'QA010101AAA'
+  };
+  await fixture.company.save();
   const idempotencyKey = `checkout-${process.pid}`;
   const result = await salesController.addSell(salePayload(fixture), idempotencyKey);
 
@@ -197,12 +202,33 @@ test('checkout is atomic, authoritative and idempotent', async () => {
   assert.equal(coupon.usageHistory.length, 1);
   assert.equal(movement.amount, 212);
   assert.equal(ticket.totals.total, 212);
+  assert.equal(ticket.storeInfo.name, 'Sucursal QA');
+  assert.equal(ticket.storeInfo.address, 'Direccion ticket QA');
+  assert.equal(ticket.storeInfo.phone, '5551234567');
+  assert.equal(ticket.storeInfo.email, 'qa@example.com');
+  assert.equal(ticket.storeInfo.taxId, 'QA010101AAA');
 
   const retry = await salesController.addSell(salePayload(fixture), idempotencyKey);
   assert.equal(String(retry._id), String(result._id));
   assert.equal(await Sale.countDocuments({ company: fixture.company._id }), 1);
   assert.equal((await Product.findById(fixture.product._id)).stock, 3);
   assert.equal(await StockHistory.countDocuments({ product: fixture.product._id }), 1);
+});
+
+test('logout revokes the access token and a fresh login restores access', async () => {
+  const fixture = await createFixture();
+  const token = tokenFor(fixture.cashier);
+  assert.equal((await api('/products', { token })).status, 200);
+  assert.equal((await api('/users/logout', { token, method: 'POST' })).status, 200);
+  assert.equal((await api('/products', { token })).status, 401);
+  const login = await api('/users/login', {
+    method: 'POST',
+    body: { userName: fixture.cashier.userName, password: 'e2e-password' }
+  });
+  assert.equal(login.status, 200);
+  assert.equal(login.data.session.refreshSupported, false);
+  assert.equal(jwt.decode(login.data.token).tokenVersion, 1);
+  assert.equal((await api('/products', { token: login.data.token })).status, 200);
 });
 
 test('tenant and coupon failures roll back without side effects', async () => {
@@ -280,6 +306,10 @@ test('concurrent folio generation is unique and tenant scoped', async () => {
   );
   assert.notEqual(foreignTicket, tickets[0]);
   assert.match(foreignTicket, /-0001$/);
+  const otherRegisterMovement = await CashMovement.generateMovementNumber(
+    fixture.company._id, 'E2E-REGISTER-2'
+  );
+  assert.ok(!movements.includes(otherRegisterMovement));
 });
 
 test('HTTP contract enforces JWT, authoritative pricing and tenant ownership', async () => {

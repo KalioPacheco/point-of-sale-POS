@@ -37,7 +37,7 @@ counterSchema.statics.next = async function next(key, baseline = 0, session = nu
 
 function companyToken(company) {
   const value = String(company || 'global');
-  return value.slice(-6).toUpperCase();
+  return value.toUpperCase();
 }
 
 function counterKey({ kind, company, cashRegister = 'GLOBAL', date, subtype = 'default' }) {

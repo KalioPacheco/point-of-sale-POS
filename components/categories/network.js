@@ -1,7 +1,6 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
@@ -46,9 +45,10 @@ const updateCategory = function (req, res) {
   const { categoryId } = req.params;
   const category = req.body;
   const companyId = Helper.getCompanyId(req);
-  category.companyId = companyId;
+  delete category.companyId;
+  delete category.company;
   controller
-    .updateCategory(categoryId, category)
+    .updateCategory(categoryId, category, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -59,8 +59,9 @@ const updateCategory = function (req, res) {
 
 const removeCategory = function (req, res) {
   const { categoryId } = req.params;
+  const companyId = Helper.getCompanyId(req);
   controller
-    .removeCategory(categoryId)
+    .removeCategory(categoryId, companyId)
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -69,11 +70,11 @@ const removeCategory = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['vendedor', 'admin', 'manager']), listCategories);
-router.get('/:categoryId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeCategory, listCategories);
-router.post('/', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), validateCategoryCreate, addCategory);
-router.patch('/:categoryId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeCategory, validateCategoryUpdate, updateCategory);
-router.delete('/:categoryId', passportConfig.isAuth,authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeCategory, removeCategory);
+router.get('/', authenticateToken, requireCompanyScope, requireRole(['vendedor', 'admin', 'manager']), listCategories);
+router.get('/:categoryId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeCategory, listCategories);
+router.post('/', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), validateCategoryCreate, addCategory);
+router.patch('/:categoryId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeCategory, validateCategoryUpdate, updateCategory);
+router.delete('/:categoryId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeCategory, removeCategory);
 
 
 module.exports = router;

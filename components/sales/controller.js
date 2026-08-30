@@ -313,9 +313,11 @@ async function createSaleTicket(sale, prepared, session) {
     saleId: sale._id,
     company: sale.company,
     storeInfo: {
-      name: company?.name || 'Mi Tienda',
-      address,
-      taxId: company?.rfc || ''
+      name: company?.ticketStoreConfig?.name || company?.name || 'Mi Tienda',
+      address: company?.ticketStoreConfig?.address || address,
+      taxId: company?.ticketStoreConfig?.taxId || company?.rfc || '',
+      phone: company?.ticketStoreConfig?.phone || company?.phone || '',
+      email: company?.ticketStoreConfig?.email || company?.email || ''
     },
     transactionInfo: {
       date: sale.createdAt,

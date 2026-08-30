@@ -10,6 +10,69 @@ const CashMovement = require('../cashMovements/model');
 const Coupon = require('../coupons/model');
 const CashRegisterShift = require('../cashRegisterShifts/model');
 
+const DEFAULT_STORE_CONFIG = {
+  name: 'Nombre de la Empresa',
+  address: 'Dirección de la Empresa',
+  phone: '',
+  taxId: '',
+  email: ''
+};
+
+const cleanString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const withFallback = (value, fallback = '') => {
+  const cleaned = cleanString(value);
+  return cleaned || fallback;
+};
+
+const formatCompanyAddress = (address) => {
+  if (typeof address === 'string') {
+    return withFallback(address, DEFAULT_STORE_CONFIG.address);
+  }
+
+  if (!address || typeof address !== 'object') {
+    return DEFAULT_STORE_CONFIG.address;
+  }
+
+  const street = cleanString(address.street);
+  const ext = cleanString(address.number?.ext);
+  const int = cleanString(address.number?.int);
+  const numberText = [ext, int ? `Int ${int}` : ''].filter(Boolean).join(' ');
+  const line1 = [street, numberText].filter(Boolean).join(' ');
+  const city = cleanString(address.city);
+  const state = cleanString(address.state);
+  const country = cleanString(address.country);
+
+  const formatted = [line1, city, state, country].filter(Boolean).join(', ');
+  return formatted || DEFAULT_STORE_CONFIG.address;
+};
+
+const mapCompanyToStoreConfig = (company) => {
+  if (!company) {
+    return { ...DEFAULT_STORE_CONFIG };
+  }
+
+  const persisted = company.ticketStoreConfig && typeof company.ticketStoreConfig === 'object'
+    ? company.ticketStoreConfig
+    : {};
+
+  return {
+    name: withFallback(persisted.name, withFallback(company.name, DEFAULT_STORE_CONFIG.name)),
+    address: withFallback(persisted.address, formatCompanyAddress(company.address)),
+    phone: withFallback(persisted.phone, ''),
+    taxId: withFallback(persisted.taxId, withFallback(company.rfc, '')),
+    email: withFallback(persisted.email, '')
+  };
+};
+
+const normalizeStoreConfigInput = (storeInfo, currentStoreInfo = DEFAULT_STORE_CONFIG) => ({
+  name: withFallback(storeInfo?.name, currentStoreInfo.name),
+  address: withFallback(storeInfo?.address, currentStoreInfo.address),
+  phone: withFallback(storeInfo?.phone, currentStoreInfo.phone),
+  taxId: withFallback(storeInfo?.taxId, currentStoreInfo.taxId),
+  email: withFallback(storeInfo?.email, currentStoreInfo.email)
+});
+
 const normalizeObjectId = (value) => {
   if (!value) return undefined;
   const asString = typeof value === 'string' ? value : value.toString?.();
@@ -30,44 +93,90 @@ const normalizeTaxBreakdown = (value) => {
     }));
 };
 
-const getCompany = async (companyId) => {
+const normalizeAppliedCoupon = (value, totals = {}) => {
+  if (!value || typeof value !== 'object') return null;
+
+  const validDiscountTypes = ['percentage', 'fixed_amount'];
+  const couponId = normalizeObjectId(value.couponId || value.id);
+  const code = value.code || totals.couponCode || null;
+  const name = value.name || totals.couponName || null;
+  const description = value.description || null;
+  const discountType = validDiscountTypes.includes(value.discountType)
+    ? value.discountType
+    : undefined;
+  const discountValue = Number(value.discountValue);
+  const discountAmount = Number(value.discountAmount ?? totals.couponDiscount ?? 0);
+
+  if (!couponId && !code && !name && !description && !discountAmount) {
+    return null;
+  }
+
+  return {
+    couponId,
+    code,
+    name,
+    description,
+    discountType,
+    discountValue: Number.isNaN(discountValue) ? undefined : discountValue,
+    discountAmount
+  };
+};
+
+const getCompany = async (companyId, options = {}) => {
+  const companiesModel = options.companiesModel || CompaniesModel;
   if (!companyId || companyId === 'default-company-id') return null;
   try {
-    return await CompaniesModel.findById(companyId);
+    return await companiesModel.findById(companyId);
   } catch {
     return null;
   }
 };
 
-async function getStoreInfo(companyId) {
-  const company = await getCompany(companyId);
-  if (!company) throw new Error('Company not found');
-  const address = company.address
-    ? [company.address.street, company.address.number?.ext, company.address.city]
-      .filter(Boolean).join(', ')
-    : '';
-  return {
-    name: company.name || 'Nombre de la Empresa',
-    address,
-    phone: company.phone || '',
-    taxId: company.rfc || '',
-    email: company.email || ''
-  };
+async function getStoreInfo(companyId, options = {}) {
+  try {
+    const company = await getCompany(companyId, options);
+    if (!company) return { ...DEFAULT_STORE_CONFIG };
+    return mapCompanyToStoreConfig(company);
+  } catch (error) {
+    console.error('Error getting store info:', error);
+    return { ...DEFAULT_STORE_CONFIG };
+  }
 }
 
-async function updateStoreInfo(storeInfo, companyId) {
-  const company = await getCompany(companyId);
-  if (!company) throw new Error('Company not found');
-  if (storeInfo.name !== undefined) company.name = storeInfo.name;
-  if (storeInfo.phone !== undefined) company.phone = storeInfo.phone;
-  if (storeInfo.email !== undefined) company.email = storeInfo.email;
-  if (storeInfo.taxId !== undefined) company.rfc = storeInfo.taxId;
-  if (storeInfo.address !== undefined) {
-    company.address = company.address || {};
-    company.address.street = storeInfo.address;
+async function updateStoreInfo(storeInfo, companyId, options = {}) {
+  try {
+    const company = await getCompany(companyId, options);
+    if (!company) {
+      throw new Error('No se encontró empresa para persistir store-config');
+    }
+
+    const currentStoreInfo = mapCompanyToStoreConfig(company);
+    const normalizedStoreInfo = normalizeStoreConfigInput(storeInfo, currentStoreInfo);
+
+    company.ticketStoreConfig = {
+      ...(company.ticketStoreConfig || {}),
+      ...normalizedStoreInfo,
+      updatedAt: new Date(),
+    };
+
+    if (normalizedStoreInfo.name) {
+      company.name = normalizedStoreInfo.name;
+    }
+
+    await company.save();
+
+    return {
+      success: true,
+      message: 'Store updated',
+      storeInfo: mapCompanyToStoreConfig(company)
+    };
+
+  } catch (error) {
+    if (!/No se encontró empresa para persistir store-config/i.test(error.message || '')) {
+      console.error('Error updating store:', error);
+    }
+    throw error;
   }
-  await company.save();
-  return { success: true, message: 'Store updated', storeInfo: await getStoreInfo(companyId) };
 }
 
 async function createTicket(ticketData) {
@@ -94,10 +203,12 @@ async function createTicket(ticketData) {
       companyId
     );
 
-    const storeInfo = ticketData.storeInfo?.name && 
+    const storeInfoSource = ticketData.storeInfo?.name &&
       ticketData.storeInfo.name !== 'Nombre de la Empresa' 
       ? ticketData.storeInfo 
       : await getStoreInfo(ticketData.companyId);
+
+    const storeInfo = normalizeStoreConfigInput(storeInfoSource, DEFAULT_STORE_CONFIG);
 
     const newTicket = new Model({
       ticketNumber,
@@ -113,7 +224,7 @@ async function createTicket(ticketData) {
       notes: ticketData.notes,
       company: companyId,
       taxBreakdown: normalizeTaxBreakdown(ticketData.taxBreakdown),
-      appliedCoupon: ticketData.appliedCoupon || ticketData.coupon || null
+      appliedCoupon: normalizeAppliedCoupon(ticketData.appliedCoupon, ticketData.totals)
     });
 
     newTicket.calculateTotals();
@@ -131,7 +242,7 @@ async function createTicket(ticketData) {
         totalTaxes: savedTicket.totals.totalTaxes,
         taxBreakdown: savedTicket.taxBreakdown,
         discounts: savedTicket.totals.discounts,
-        coupon: savedTicket.coupon
+        appliedCoupon: savedTicket.appliedCoupon
       },
       message: `Ticket ${ticketNumber} created`
     };
@@ -207,8 +318,12 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
       details: sale.paymentDetails || {}
     },
     taxBreakdown: sale.taxBreakdown || [],
-    coupon: sale.coupon || null,
-    discount: sale.discount || null,
+    appliedCoupon: sale.couponId || sale.couponCode ? {
+      couponId: sale.couponId,
+      code: sale.couponCode,
+      name: sale.couponName,
+      discountAmount: sale.couponDiscount || 0
+    } : null,
     companyId
   };
 };
@@ -381,13 +496,17 @@ async function getTicketsByDateRange(companyId, startDate, endDate, statuses = [
 async function generateTicketData(ticketId) {
   try {
     const ticket = await getTicketById(ticketId);
-    const couponCode = ticket.totals?.couponCode || ticket.coupon?.code || ticket.discount?.couponCode;
-    const couponName = ticket.totals?.couponName || ticket.coupon?.description || ticket.discount?.description;
-    const discountAmount = ticket.totals?.couponDiscount || ticket.totals?.discounts || ticket.discount?.amount || 0;
+    const couponCode = ticket.appliedCoupon?.code || ticket.totals?.couponCode || null;
+    const couponName = ticket.appliedCoupon?.name || ticket.totals?.couponName || null;
+    const couponDescription = ticket.appliedCoupon?.description || couponName;
+    const discountAmount = ticket.appliedCoupon?.discountAmount
+      || ticket.totals?.couponDiscount
+      || ticket.totals?.discounts
+      || 0;
 
     const data = {
       storeName: ticket.storeInfo.name,
-      storeAddress: ticket.storeInfo.address,
+      storeAddress: withFallback(ticket.storeInfo.address, DEFAULT_STORE_CONFIG.address),
       storePhone: ticket.storeInfo.phone,
       storeEmail: ticket.storeInfo.email,
       taxId: ticket.storeInfo.taxId,
@@ -423,7 +542,7 @@ async function generateTicketData(ticketId) {
       notes: ticket.notes,
       couponCode,
       couponName,
-      couponDescription: couponName,
+      couponDescription,
       discountAmount
     };
 
@@ -755,8 +874,7 @@ const createSaleTicket = async (saleData, userId, companyId, withTaxes = false) 
         details: saleData.paymentDetails || {}
       },
       taxBreakdown: withTaxes ? (saleData.taxBreakdown || []) : [],
-      coupon: saleData.coupon || null,
-      discount: saleData.discount || null,
+      appliedCoupon: normalizeAppliedCoupon(saleData.appliedCoupon, totals),
       notes: saleData.notes,
       companyId
     });
@@ -771,6 +889,10 @@ async function processSaleTicket(saleData, userId, companyId) {
 }
 
 async function processSaleTicketWithTaxes(saleData, userId, companyId) {
+  return createSaleTicket(saleData, userId, companyId, true);
+}
+
+async function processSaleTicketWithCoupon(saleData, userId, companyId) {
   return createSaleTicket(saleData, userId, companyId, true);
 }
 
@@ -948,10 +1070,17 @@ module.exports = {
   getTicketStats,
   updateStoreInfo,
   getStoreInfo,
+  __storeConfigUtils: {
+    formatCompanyAddress,
+    mapCompanyToStoreConfig,
+    normalizeStoreConfigInput,
+    DEFAULT_STORE_CONFIG,
+  },
   processSaleTicket,
   processRefundTicket,
   createTicketFromSaleWithTaxes,
   processSaleTicketWithTaxes,
+  processSaleTicketWithCoupon,
   getTicketsByDateRange,
   generateTicketPDFFromSale
 };

@@ -1,8 +1,10 @@
 const express = require('express');
 const controller = require('./controller');
+const Helper = require('../../helpers');
 const {
   authenticateToken,
-  requireRole
+  requireRole,
+  requireTenant
 } = require('../../middleware/auth');
 const { validateTaxCreate, validateTaxUpdate } = require('../../middleware/validation');
 const { TaxConfig } = require('./model');
@@ -49,7 +51,11 @@ router.post('/config', validateTaxCreate, authenticateToken, requireRole(['admin
 
 router.get('/config/:companyId', authenticateToken, requireRole(['admin']), requireTenantParam('companyId'), async (req, res) => {
   try {
-    const { companyId } = req.params;
+    const { companyId: pathCompanyId } = req.params;
+    const companyId = Helper.getCompanyId(req);
+    if (pathCompanyId && pathCompanyId !== companyId) {
+      return sendResponse.error(req, res, 'Cross-tenant access denied', 403);
+    }
     const result = await controller.listTaxConfigs(companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
@@ -60,7 +66,8 @@ router.get('/config/:companyId', authenticateToken, requireRole(['admin']), requ
 router.get('/config/detail/:taxConfigId', authenticateToken, requireRole(['admin']), scopeTax, async (req, res) => {
   try {
     const { taxConfigId } = req.params;
-    const result = await controller.getTaxConfig(taxConfigId);
+    const companyId = Helper.getCompanyId(req);
+    const result = await controller.getTaxConfig(taxConfigId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
     sendResponse.error(req, res, error.message, 400);
@@ -70,7 +77,8 @@ router.get('/config/detail/:taxConfigId', authenticateToken, requireRole(['admin
 router.put('/config/:taxConfigId', validateTaxUpdate, authenticateToken, requireRole(['admin']), scopeTax, async (req, res) => {
   try {
     const { taxConfigId } = req.params;
-    const result = await controller.updateTaxConfig(taxConfigId, req.body);
+    const companyId = Helper.getCompanyId(req);
+    const result = await controller.updateTaxConfig(taxConfigId, req.body, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
     sendResponse.error(req, res, error.message, 400);
@@ -80,7 +88,8 @@ router.put('/config/:taxConfigId', validateTaxUpdate, authenticateToken, require
 router.delete('/config/:taxConfigId', authenticateToken, requireRole(['admin']), scopeTax, async (req, res) => {
   try {
     const { taxConfigId } = req.params;
-    const result = await controller.removeTaxConfig(taxConfigId);
+    const companyId = Helper.getCompanyId(req);
+    const result = await controller.removeTaxConfig(taxConfigId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
     sendResponse.error(req, res, error.message, 400);
@@ -88,7 +97,7 @@ router.delete('/config/:taxConfigId', authenticateToken, requireRole(['admin']),
 });
 
 
-router.post('/product', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.post('/product', authenticateToken, requireTenant, requireRole(['admin']), async (req, res) => {
   try {
     const { productId, taxConfigId, customRate } = req.body;
     const companyId = req.companyId;
@@ -101,7 +110,7 @@ router.post('/product', authenticateToken, requireRole(['admin']), async (req, r
   }
 });
 
-router.post('/product/bulk', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.post('/product/bulk', authenticateToken, requireTenant, requireRole(['admin']), async (req, res) => {
   try {
     const { productIds, taxConfigId, customRate } = req.body;
     const companyId = req.companyId;
@@ -116,7 +125,11 @@ router.post('/product/bulk', authenticateToken, requireRole(['admin']), async (r
 
 router.get('/product/:productId/:companyId', authenticateToken, requireRole(['admin']), requireTenantParam('companyId'), scopeProduct, async (req, res) => {
   try {
-    const { productId, companyId } = req.params;
+    const { productId, companyId: pathCompanyId } = req.params;
+    const companyId = Helper.getCompanyId(req);
+    if (pathCompanyId && pathCompanyId !== companyId) {
+      return sendResponse.error(req, res, 'Cross-tenant access denied', 403);
+    }
     const result = await controller.getProductTaxes(productId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
@@ -126,7 +139,11 @@ router.get('/product/:productId/:companyId', authenticateToken, requireRole(['ad
 
 router.get('/product/detail/:productId/:companyId', authenticateToken, requireRole(['admin']), requireTenantParam('companyId'), scopeProduct, async (req, res) => {
   try {
-    const { productId, companyId } = req.params;
+    const { productId, companyId: pathCompanyId } = req.params;
+    const companyId = Helper.getCompanyId(req);
+    if (pathCompanyId && pathCompanyId !== companyId) {
+      return sendResponse.error(req, res, 'Cross-tenant access denied', 403);
+    }
     const result = await controller.getProductWithTaxes(productId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
@@ -136,7 +153,11 @@ router.get('/product/detail/:productId/:companyId', authenticateToken, requireRo
 
 router.delete('/product/:productId/:taxConfigId/:companyId', authenticateToken, requireRole(['admin']), requireTenantParam('companyId'), scopeProduct, scopeTax, async (req, res) => {
   try {
-    const { productId, taxConfigId, companyId } = req.params;
+    const { productId, taxConfigId, companyId: pathCompanyId } = req.params;
+    const companyId = Helper.getCompanyId(req);
+    if (pathCompanyId && pathCompanyId !== companyId) {
+      return sendResponse.error(req, res, 'Cross-tenant access denied', 403);
+    }
     const result = await controller.removeProductTax(productId, taxConfigId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
@@ -145,7 +166,7 @@ router.delete('/product/:productId/:taxConfigId/:companyId', authenticateToken, 
 });
 
 
-router.post('/calculate/product', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.post('/calculate/product', authenticateToken, requireTenant, requireRole(['admin']), async (req, res) => {
   try {
     const { productId, basePrice } = req.body;
     const companyId = req.companyId;
@@ -156,7 +177,7 @@ router.post('/calculate/product', authenticateToken, requireRole(['admin']), asy
   }
 });
 
-router.post('/calculate/sale', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.post('/calculate/sale', authenticateToken, requireTenant, requireRole(['admin']), async (req, res) => {
   try {
     const { products } = req.body;
     const companyId = req.companyId;
@@ -167,7 +188,7 @@ router.post('/calculate/sale', authenticateToken, requireRole(['admin']), async 
   }
 });
 
-router.get('/test', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.get('/test', authenticateToken, requireTenant, requireRole(['admin']), async (req, res) => {
   sendResponse.success(req, res, {
     message: 'Tax system is working correctly',
     timestamp: new Date(),

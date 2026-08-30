@@ -9,12 +9,15 @@
     "build": "node scripts/check-syntax.js",
     "lint": "eslint . --ignore-pattern node_modules",
     "lintfix": "eslint . --fix --cache --ignore-pattern node_modules",
-    "test": "node --test test",
+    "test": "node --test test tests components/*/*.test.js middleware/*.test.js",
     "test:e2e": "node --test test-e2e",
     "typecheck": "node scripts/check-syntax.js",
     "migrate:status": "node scripts/migrate.js status",
     "migrate:plan": "node scripts/migrate.js plan",
-    "migrate:up": "node scripts/migrate.js up"
+    "migrate:up": "node scripts/migrate.js up",
+    "test:aud01": "node --test tests/tenant-scoping.test.js",
+    "test:aud08": "node --test tests/stock-concurrency.test.js",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

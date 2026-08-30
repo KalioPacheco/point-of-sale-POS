@@ -1,7 +1,6 @@
 const express = require('express');
 const response = require('../../network');
 const controller = require('./controller');
-const passportConfig = require('../../passport');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
@@ -37,7 +36,7 @@ const logout = function (req, res) {
   controller
     .logout(req)
     .then(data => {
-      response.success(req, res, data, 201);
+      response.success(req, res, data, 200);
     })
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);
@@ -94,13 +93,13 @@ const removeUser = function (req, res) {
     });
 };
 
-router.get('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listUsers);
-router.get('/:userId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), listUsers);
-router.post('/', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserCreate, addUser);
+router.get('/', authenticateToken, requireRole(['admin']), listUsers);
+router.get('/:userId', authenticateToken, requireRole(['admin']), listUsers);
+router.post('/', authenticateToken, requireRole(['admin']), validateUserCreate, addUser);
 router.post('/login', loginRateLimit, controller.login);
-router.post('/register', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserCreate, controller.register);
-router.post('/logout', passportConfig.isAuth, authenticateToken, logout);
-router.patch('/:userId', passportConfig.isAuth, authenticateToken, requireRole(['admin']), validateUserUpdate, updateUser);
-router.delete('/:userId', passportConfig.isAuth,authenticateToken, requireRole(['admin']), removeUser);
+router.post('/register', authenticateToken, requireRole(['admin']), validateUserCreate, controller.register);
+router.post('/logout', authenticateToken, logout);
+router.patch('/:userId', authenticateToken, requireRole(['admin']), validateUserUpdate, updateUser);
+router.delete('/:userId', authenticateToken, requireRole(['admin']), removeUser);
 
 module.exports = router;

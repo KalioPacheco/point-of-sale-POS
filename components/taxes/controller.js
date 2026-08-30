@@ -16,28 +16,28 @@ function listTaxConfigs(companyId) {
   return store.listTaxConfigs(companyId);
 }
 
-function getTaxConfig(taxConfigId) {
-  if (!taxConfigId) {
-    return Promise.reject(new Error('Tax config ID is required'));
+function getTaxConfig(taxConfigId, companyId) {
+  if (!taxConfigId || !companyId) {
+    return Promise.reject(new Error('Tax config ID and company ID are required'));
   }
 
-  return store.getTaxConfig(taxConfigId);
+  return store.getTaxConfig(taxConfigId, companyId);
 }
 
-function updateTaxConfig(taxConfigId, updateData) {
-  if (!taxConfigId || !updateData) {
-    return Promise.reject(new Error('Tax config ID and update data are required'));
+function updateTaxConfig(taxConfigId, updateData, companyId) {
+  if (!taxConfigId || !updateData || !companyId) {
+    return Promise.reject(new Error('Tax config ID, update data, and company ID are required'));
   }
 
-  return store.updateTaxConfig(taxConfigId, updateData);
+  return store.updateTaxConfig(taxConfigId, updateData, companyId);
 }
 
-function removeTaxConfig(taxConfigId) {
-  if (!taxConfigId) {
-    return Promise.reject(new Error('Tax config ID is required'));
+function removeTaxConfig(taxConfigId, companyId) {
+  if (!taxConfigId || !companyId) {
+    return Promise.reject(new Error('Tax config ID and company ID are required'));
   }
 
-  return store.removeTaxConfig(taxConfigId);
+  return store.removeTaxConfig(taxConfigId, companyId);
 }
 
 async function setProductTax(productId, taxConfigId, customRate, companyId, userId) {
@@ -126,7 +126,7 @@ async function getProductWithTaxes(productId, companyId) {
   try {
 
     const {Product} = require('../products/model'); // eslint-disable-line global-require
-    const product = await Product.findById(productId);
+    const product = await Product.findOne({ _id: productId, company: companyId });
     
     if (!product) {
       return Promise.reject(new Error('Product not found'));
