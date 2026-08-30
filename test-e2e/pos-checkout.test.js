@@ -20,6 +20,20 @@ const CashMovement = require('../components/cashMovements/model');
 const Sale = require('../components/sales/model');
 const Ticket = require('../components/ticket/model');
 const routes = require('../routes');
+const { createHttpAccess } = require('../middleware/httpAccess');
+const productStore = require('../components/products/store');
+const cutStore = require('../components/cashRegisterCuts/store');
+const movementStore = require('../components/cashMovements/store');
+
+async function cutFixture() {
+  const f = await createFixture();
+  f.cashier.role = 'manager';
+  await f.cashier.save();
+  return { f, data: {
+    shiftId: f.shift._id, companyId: f.company._id,
+    cashRegister: f.shift.cashRegister, administratorId: f.cashier._id, actualCash: 500
+  } };
+}
 
 mongoose.set('strictQuery', true);
 
@@ -146,12 +160,157 @@ async function api(path, { token, method = 'GET', body, headers = {} } = {}) {
   return { status: response.status, data };
 }
 
+test('manual stock adjustments serialize concurrent increments and retries', async () => {
+  const f = await createFixture();
+  const args = [f.product._id, 2, f.cashier._id, 'QA adjustment', f.company._id];
+  await Promise.all([
+    productStore.addStock(...args, { idempotencyKey: 'same-adjustment' }),
+    productStore.addStock(...args, { idempotencyKey: 'same-adjustment' }),
+    productStore.addStock(f.product._id, 3, f.cashier._id, 'Other adjustment', f.company._id)
+  ]);
+  assert.equal((await Product.findById(f.product._id)).stock, 10);
+  assert.equal(await StockHistory.countDocuments({ product: f.product._id }), 2);
+  await assert.rejects(productStore.addStock(f.product._id, 9, f.cashier._id, 'QA adjustment',
+    f.company._id, { idempotencyKey: 'same-adjustment' }), /already used/);
+  await assert.rejects(productStore.setStock(f.product._id, 20, f.cashier._id, 'Count',
+    f.company._id, { expectedStock: 5 }), /Stock conflict/);
+  await productStore.setStock(f.product._id, 0, f.cashier._id, 'Count',
+    f.company._id, { expectedStock: 10 });
+  const history = await StockHistory.findOne({ product: f.product._id, type: 'set' });
+  assert.equal(history.previousStock, 10);
+  assert.equal(history.newStock, 0);
+  assert.equal(String(history.user), String(f.cashier._id));
+});
+
+test('manual stock history failure rolls back product and permits safe retry', async () => {
+  const f = await createFixture();
+  const originalCreate = StockHistory.create;
+  StockHistory.create = async () => { throw new Error('Injected history failure'); };
+  try {
+    await assert.rejects(productStore.reduceStock(f.product._id, 2, f.cashier._id,
+      'QA failure', f.company._id, { idempotencyKey: 'rollback' }), /Injected/);
+  } finally { StockHistory.create = originalCreate; }
+  assert.equal((await Product.findById(f.product._id)).stock, 5);
+  assert.equal(await StockHistory.countDocuments({ product: f.product._id }), 0);
+  const args = [f.product._id, 2, f.cashier._id, 'QA failure', f.company._id, { idempotencyKey: 'rollback' }];
+  await productStore.reduceStock(...args);
+  await productStore.reduceStock(...args);
+  assert.equal((await Product.findById(f.product._id)).stock, 3);
+  assert.equal(await StockHistory.countDocuments({ product: f.product._id }), 1);
+});
+
+test('manual stock HTTP validates role, tenant, actor and stale absolute adjustments', async () => {
+  const f = await createFixture();
+  const path = `/products/${f.product._id}/stock/set`;
+  assert.equal((await api(path, { token: tokenFor(f.cashier), method: 'PUT', body: { quantity: 2 } })).status, 403);
+  f.cashier.role = 'manager';
+  await f.cashier.save();
+  const token = tokenFor(f.cashier);
+  assert.equal((await api(`/products/${f.foreignProduct._id}/stock/add`, {
+    token, method: 'PUT', body: { quantity: 1 }
+  })).status, 404);
+  assert.equal((await api(path, { token, method: 'PUT', body: { quantity: '2' } })).status, 400);
+  assert.equal((await api(path, { token, method: 'PUT', body: { quantity: 2, expectedStock: 99 } })).status, 409);
+  const request = { token, method: 'PUT', body: { quantity: 2, expectedStock: 5 }, headers: { 'Idempotency-Key': 'http-set' } };
+  assert.equal((await api(path, request)).status, 200);
+  assert.equal((await api(path, request)).status, 200);
+  assert.equal(await StockHistory.countDocuments({ product: f.product._id, user: f.cashier._id }), 1);
+});
+
+test('cut rollback includes the persisted cut when final shift save fails', async () => {
+  const { f, data } = await cutFixture();
+  const originalSave = CashRegisterShift.prototype.save;
+  CashRegisterShift.prototype.save = async function injectedSave(options) {
+    if (this.cutStatus === 'completed') throw new Error('Injected final shift failure');
+    return originalSave.call(this, options);
+  };
+  try {
+    await assert.rejects(cutStore.createCashRegisterCut(data), /Injected final shift failure/);
+  } finally { CashRegisterShift.prototype.save = originalSave; }
+  assert.equal(await CashRegisterCut.countDocuments({ shift: f.shift._id }), 0);
+  assert.equal((await CashRegisterShift.findById(f.shift._id)).status, 'open');
+  const results = await Promise.all([
+    cutStore.createCashRegisterCut(data), cutStore.createCashRegisterCut(data)
+  ]);
+  assert.equal(String(results[0].cut._id), String(results[1].cut._id));
+  assert.equal(await CashRegisterCut.countDocuments({ shift: f.shift._id }), 1);
+  const closed = await CashRegisterShift.findById(f.shift._id);
+  assert.equal(closed.cutStatus, 'completed');
+  assert.equal(String(closed.cut), String(results[0].cut._id));
+  const replay = await api('/cashregistercuts/create', {
+    token: tokenFor(f.cashier), method: 'POST',
+    body: { shiftId: f.shift._id, cashRegister: f.shift.cashRegister, actualCash: 500 }
+  });
+  assert.equal(replay.status, 200);
+  assert.equal(String(replay.data.body.cut._id), String(closed.cut));
+});
+
+test('legacy partial cut is recalculated and completed without a duplicate', async () => {
+  const { f, data } = await cutFixture();
+  const original = await cutStore.createCashRegisterCut(data);
+  await CashRegisterShift.updateOne({ _id: f.shift._id }, { $set: { cutStatus: 'pending' }, $unset: { cut: 1 } });
+  await CashRegisterCut.updateOne({ _id: original.cut._id }, { $set: { 'salesSummary.totalSales': 999 } });
+  const repaired = await cutStore.createCashRegisterCut(data);
+  assert.equal(String(repaired.cut._id), String(original.cut._id));
+  assert.equal(repaired.cut.salesSummary.totalSales, 0);
+  assert.equal((await CashRegisterShift.findById(f.shift._id)).cutStatus, 'completed');
+});
+
+test('sale racing a cut is included or rejected, never committed outside the cut', async () => {
+  const { f, data } = await cutFixture();
+  const payload = salePayload(f, { couponCode: null, products: [{ productId: f.product._id, quantity: 1 }],
+    payment: { method: 'cash', cashReceived: 116 } });
+  const [sale, cut] = await Promise.allSettled([
+    salesController.addSell(payload, 'race-cut'), cutStore.createCashRegisterCut(data)
+  ]);
+  assert.equal(cut.status, 'fulfilled');
+  const count = await Sale.countDocuments({ shift: f.shift._id });
+  assert.equal(cut.value.cut.salesSummary.salesCount, count);
+  assert.equal(cut.value.cut.salesSummary.totalSales, count * 116);
+  if (sale.status === 'rejected') assert.match(sale.reason.message, /No open shift/);
+  assert.equal((await Product.findById(f.product._id)).stock, 5 - count);
+});
+
+test('manual cash movement racing a cut is included or rejected atomically', async () => {
+  const { f, data } = await cutFixture();
+  const [movement, cut] = await Promise.allSettled([
+    movementStore.createMovement({ type: 'initial_cash', amount: 10, concept: 'QA cash',
+      userId: f.cashier._id, companyId: f.company._id, cashRegister: f.shift.cashRegister, shiftId: f.shift._id }),
+    cutStore.createCashRegisterCut(data)
+  ]);
+  assert.equal(cut.status, 'fulfilled');
+  const count = await CashMovement.countDocuments({ shift: f.shift._id, type: 'initial_cash' });
+  assert.equal(cut.value.cut.cashControl.totalMovements, count * 10);
+  if (movement.status === 'rejected') assert.match(movement.reason.message, /Open shift not found/);
+});
+
+test('refund racing a cut cannot change its totals after finalization', async () => {
+  const { f, data } = await cutFixture();
+  const sale = await salesController.addSell(salePayload(f, {
+    couponCode: null, products: [{ productId: f.product._id, quantity: 1 }],
+    payment: { method: 'cash', cashReceived: 116 }
+  }), 'refund-cut-sale');
+  const ticketStore = require('../components/ticket/store');
+  const [refund, cut] = await Promise.allSettled([
+    ticketStore.processRefundTicket({ originalSaleId: sale._id, reason: 'QA refund',
+      shiftId: f.shift._id, cashRegister: f.shift.cashRegister }, f.cashier._id, f.company._id),
+    cutStore.createCashRegisterCut(data)
+  ]);
+  assert.equal(cut.status, 'fulfilled');
+  const refunded = (await Sale.findById(sale._id)).status === 'refunded';
+  assert.equal(cut.value.cut.salesSummary.netSales, refunded ? 0 : 116);
+  assert.equal(cut.value.cut.salesSummary.refundsCount, refunded ? 1 : 0);
+  assert.equal((await Product.findById(f.product._id)).stock, refunded ? 5 : 4);
+  if (refund.status === 'rejected') assert.match(refund.reason.message, /open cashier shift/);
+});
+
 test.before(async () => {
   await mongoose.connect(ephemeralMongoUri(), { serverSelectionTimeoutMS: 15000 });
   assert.match(mongoose.connection.name, /^pos_e2e_/);
   await mongoose.connection.syncIndexes();
 
   const app = express();
+  app.use(createHttpAccess('http://localhost:5173'));
   app.use(express.json());
   app.use(passport.initialize());
   routes(app);

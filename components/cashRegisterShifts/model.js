@@ -7,6 +7,7 @@ const cashRegisterShiftSchema = new Schema({
   cashRegister: { type: String, required: true, trim: true },
   cashier: { type: Schema.ObjectId, ref: 'Users', required: true },
   openingCash: { type: Number, required: true, min: 0 },
+  operationRevision: { type: Number, default: 0 },
   closingCash: { type: Number, min: 0 },
   status: { type: String, enum: ['open', 'closed'], default: 'open', index: true },
   cutStatus: {

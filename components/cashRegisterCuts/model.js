@@ -86,7 +86,7 @@ cashRegisterCutSchema.statics.generateCutNumber = async function generateCutNumb
 };
 
 // FUNCIÓN CORREGIDA: Ahora filtra por cashRegister Y company
-cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes() {
+cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes(session = null) {
   const Sale = require('../sales/model'); // eslint-disable-line global-require
   const Movement = require('../cashMovements/model'); // eslint-disable-line global-require
   
@@ -106,7 +106,7 @@ cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes() {
   
   console.log('DEBUG - Buscando ventas con filtro:', query);
   
-  const sales = await Sale.find(query);
+  const sales = await Sale.find(query).session(session);
 
 const movementQuery = {
   shift: this.shift,
@@ -123,7 +123,7 @@ if (this.company) {
   movementQuery.company = this.company;
 }
 
-const movements = await Movement.find(movementQuery);
+const movements = await Movement.find(movementQuery).session(session);
 
 
 let totalMovements = 0;
@@ -157,7 +157,7 @@ this.cashControl.totalMovements = totalMovements;
     'refundInfo.shift': this.shift,
     company: this.company,
     disable: false
-  });
+  }).session(session);
   let subtotal = 0;
   let taxes = 0;
   let totalSales = 0;
