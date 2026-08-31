@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { Product: Model, StockHistory } = require('./model');
+const { adjustStock } = require('./stockAdjustment');
 
 const addCompanyScope = (filter, companyId) => {
   if (companyId && companyId !== 'default-company-id' && mongoose.Types.ObjectId.isValid(companyId)) {
@@ -35,8 +36,16 @@ async function listProducts(productId, companyId, filters = {}) {
     filter.disable = false;
   }
 
+  if (Array.isArray(filters.ids) && filters.ids.length > 0) {
+    const validIds = filters.ids.filter(id => mongoose.Types.ObjectId.isValid(id));
+    filter._id = { $in: validIds };
+  }
+
   if (filters.category && mongoose.Types.ObjectId.isValid(filters.category)) {
     filter.categories = filters.category;
+  }
+  if (Array.isArray(filters.categories) && filters.categories.length > 0) {
+    filter.categories = { $in: filters.categories };
   }
 
   if (filters.q && typeof filters.q === 'string' && filters.q.trim()) {
@@ -66,6 +75,10 @@ async function listProducts(productId, companyId, filters = {}) {
   return products;
 }
 
+function getProduct(productId, companyId) {
+  return Model.findOne({ _id: productId, company: companyId, disable: false });
+}
+
 async function updateProduct(productId, product, companyId = null) {
   const founProduct = await Model.findOne(addCompanyScope({
     // eslint-disable-next-line no-underscore-dangle
@@ -80,18 +93,20 @@ async function updateProduct(productId, product, companyId = null) {
   const {
     name = '',
     photo = '',
-    price = '',
+    price,
     brand = '',
     description = '',
     stock = '',
     minSell = {},
     hasVariants = null,
     variants = null,
-    categories = null,
-    code,
-    taxRate,
-    taxExempt,
-    disable
+    categories = null
+    , code
+    , sku
+    , cost
+    , disable
+    , taxRate
+    , taxExempt
   } = product;
 
   if (code) {
@@ -140,6 +155,12 @@ async function updateProduct(productId, product, companyId = null) {
   if (variants !== null) {
     founProduct.variants = variants;
   }
+  if (code !== undefined) founProduct.code = code;
+  if (sku !== undefined) founProduct.sku = sku;
+  if (cost !== undefined) founProduct.cost = cost;
+  if (typeof disable === 'boolean') founProduct.disable = disable;
+  if (taxRate !== undefined) founProduct.taxRate = taxRate;
+  if (typeof taxExempt === 'boolean') founProduct.taxExempt = taxExempt;
 
   founProduct.updated = true;
   founProduct.updatedAt = new Date();
@@ -162,155 +183,16 @@ async function removeProduct(productId, companyId = null) {
   return foundProduct.save();
 }
 
-async function addStock(productId, quantity, userId, reason = 'Manual adjustment', companyId = null) {
-  console.log(`Adding stock: productId=${productId}, quantity=${quantity}, reason=${reason}`);
-  
-  const product = await Model.findOne(addCompanyScope({ _id: productId, disable: false }, companyId));
-  if (!product) {
-    throw new Error('Product not found');
-  }
-
-  const previousStock = product.stock || 0;
-  const newStock = previousStock + quantity;
-  product.stock = newStock;
-  product.updated = true;
-  product.updatedAt = new Date();
-  
-  await StockHistory.create({
-    product: productId,
-    type: 'add',
-    quantity,
-    previousStock,
-    newStock,
-    reason,
-    user: userId
-  });
-
-  const savedProduct = await product.save();
-  
-  console.log(`Stock successfully updated: ${product.name} - ${previousStock} → ${newStock} (+${quantity})`);
-
-  return {
-    success: true,
-    product: {
-      id: savedProduct._id, // eslint-disable-line no-underscore-dangle
-      name: savedProduct.name,
-      previousStock,
-      newStock,
-      quantityAdded: quantity,
-      reason
-    },
-    message: `Successfully added ${quantity} units to ${product.name}. New stock: ${newStock}`
-  };
+function addStock(productId, quantity, userId, reason = 'Manual adjustment', companyId = null, options = {}) {
+  return adjustStock('add', productId, quantity, userId, reason, companyId, options);
 }
 
-async function reduceStock(productId, quantity, userId, reason = 'Manual adjustment', companyId = null) {
-  console.log(`Reducing stock: productId=${productId}, quantity=${quantity}, reason=${reason}`);
-  const baseFilter = addCompanyScope({ _id: productId, disable: false }, companyId);
-  const updatedAt = new Date();
-
-  const updatedProduct = await Model.findOneAndUpdate(
-    {
-      ...baseFilter,
-      stock: { $gte: quantity },
-    },
-    {
-      $inc: { stock: -quantity },
-      $set: {
-        updated: true,
-        updatedAt,
-      },
-    },
-    {
-      new: true,
-      runValidators: true,
-    }
-  );
-
-  if (!updatedProduct) {
-    const existingProduct = await Model.findOne(baseFilter).select('name stock');
-
-    if (!existingProduct) {
-      throw new Error('Product not found');
-    }
-
-    const available = existingProduct.stock || 0;
-    console.warn(
-      `[stock-rejected] productId=${productId} requested=${quantity} available=${available} reason=${reason}`
-    );
-
-    const stockError = new Error(
-      `Stock insuficiente para "${existingProduct.name}". Disponible: ${available}, solicitado: ${quantity}`
-    );
-    stockError.code = 'INSUFFICIENT_STOCK';
-    stockError.available = available;
-    stockError.requested = quantity;
-    throw stockError;
-  }
-
-  const newStock = updatedProduct.stock || 0;
-  const previousStock = newStock + quantity;
-
-  await StockHistory.create({
-    product: productId,
-    type: 'reduce',
-    quantity,
-    previousStock,
-    newStock,
-    reason,
-    user: userId,
-  });
-
-  console.log(`Stock successfully updated: ${updatedProduct.name} - ${previousStock} → ${newStock} (-${quantity})`);
-
-  return {
-    success: true,
-    product: {
-      id: updatedProduct._id, // eslint-disable-line no-underscore-dangle
-      name: updatedProduct.name,
-      previousStock,
-      newStock,
-      quantityReduced: quantity,
-      reason,
-      user: userId
-    },
-    message: `Successfully reduced ${quantity} units from ${updatedProduct.name}. New stock: ${newStock}`
-  };
+function reduceStock(productId, quantity, userId, reason = 'Manual adjustment', companyId = null, options = {}) {
+  return adjustStock('reduce', productId, quantity, userId, reason, companyId, options);
 }
 
-async function setStock(productId, quantity, userId, reason = 'Stock adjustment', companyId = null) {
-  console.log(`Setting stock: productId=${productId}, quantity=${quantity}, reason=${reason}`);
-  
-  const product = await Model.findOne(addCompanyScope({ _id: productId, disable: false }, companyId));
-  if (!product) {
-    throw new Error('Product not found');
-  }
-
-  const previousStock = product.stock || 0;
-  const newStock = quantity;
-
-
-  product.stock = newStock;
-  product.updated = true;
-  product.updatedAt = new Date();
-  
-  const savedProduct = await product.save();
-  
-  console.log(`Stock successfully set: ${product.name} - ${previousStock} → ${newStock}`);
-
-  return {
-    success: true,
-    product: {
-      id: savedProduct._id, // eslint-disable-line no-underscore-dangle
-      name: savedProduct.name,
-      previousStock,
-      newStock,
-      difference: newStock - previousStock,
-      reason,
-      user: userId
-    },
-    message: `Successfully set stock to ${quantity} units for ${product.name}`
-  };
+function setStock(productId, quantity, userId, reason = 'Stock adjustment', companyId = null, options = {}) {
+  return adjustStock('set', productId, quantity, userId, reason, companyId, options);
 }
 
 async function getStockHistory(productId, companyId = null) {
@@ -590,4 +472,5 @@ module.exports = {
   addVariantStock,
   disableVariant,
   enableVariant,
+  get: getProduct,
 };

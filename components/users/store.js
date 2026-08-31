@@ -1,4 +1,3 @@
-const passport = require('passport');
 const Model = require('./model');
 
 function sanitizeUser(userDocument) {
@@ -93,7 +92,7 @@ async function updateUser(userId, data, companyId) {
     foundBrand.name = name;
   }
   if (photo) {
-    foundBrand.photo = name;
+    foundBrand.photo = photo;
   }
   if (lastNames) {
     foundBrand.lastNames = lastNames;
@@ -143,17 +142,14 @@ async function logout(userId) {
     throw new Error('Usuario no autenticado');
   }
 
-  const user = await Model.findById(userId);
+  const user = await Model.findByIdAndUpdate(userId, {
+    $inc: { tokenVersion: 1 },
+    $set: { updated: true, updatedAt: new Date() }
+  }, { new: true });
 
   if (!user) {
     throw new Error('Usuario no encontrado');
   }
-
-  user.tokenVersion = (user.tokenVersion || 0) + 1;
-  user.updated = true;
-  user.updatedAt = new Date();
-
-  await user.save();
 
   return {
     invalidated: true,

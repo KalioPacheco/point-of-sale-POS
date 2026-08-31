@@ -1,16 +1,32 @@
 const mongoose = require('mongoose');
 const Model = require('./model');
 
-function addSell(sell) {
-  const newSales = new Model(sell);
-  return newSales.save();
+function parseReportDate(value, endOfDay = false) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    const [year, month, day] = String(value).split('-').map(Number);
+    return new Date(
+      year,
+      month - 1,
+      day,
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0
+    );
+  }
+  return new Date(value);
 }
 
-async function listSales(sellId, companyId) {
+function addSell(sell, session = null) {
+  const newSales = new Model(sell);
+  return newSales.save(session ? { session } : undefined);
+}
+
+async function listSales(sellId, companyId, cashierId) {
   const filter = {};
   
   if (sellId) {
-    filter.id = sellId;
+    filter._id = sellId;
   }
 
   if (companyId && companyId !== 'default-company-id') {
@@ -20,6 +36,7 @@ async function listSales(sellId, companyId) {
   }
 
   filter.disable = false;
+  if (cashierId) filter.createdBy = cashierId;
 
 
   const sales = await Model.find(filter)
@@ -30,8 +47,10 @@ async function listSales(sellId, companyId) {
   return sales;
 }
 
-async function getSaleById(saleId) {
-  const sale = await Model.findById(saleId)
+async function getSaleById(saleId, companyId) {
+  const filter = { _id: saleId };
+  if (companyId) filter.company = companyId;
+  const sale = await Model.findOne(filter)
     .populate('createdBy')
     .populate('company')
     .exec();
@@ -39,29 +58,37 @@ async function getSaleById(saleId) {
   return sale;
 }
 
-function findByIdempotencyKey(key) {
-  return Model.findOne({ idempotencyKey: key });
+function findByIdempotencyKey(key, companyId) {
+  return Model.findOne({ idempotencyKey: key, company: companyId });
 }
 
 
 async function listSalesForReports(filters = {}) {
   const query = { disable: false };
+  let reportRange = null;
   
  
   if (filters.startDate && filters.endDate) {
-    query.createdAt = {
-      $gte: new Date(filters.startDate),
-      $lte: new Date(filters.endDate)
+    reportRange = {
+      $gte: parseReportDate(filters.startDate),
+      $lte: parseReportDate(filters.endDate, true)
     };
   } else if (filters.date) {
     const startOfDay = new Date(filters.date);
     const endOfDay = new Date(filters.date);
     endOfDay.setHours(23, 59, 59, 999);
     
-    query.createdAt = {
+    reportRange = {
       $gte: startOfDay,
       $lte: endOfDay
     };
+  }
+
+  if (reportRange) {
+    query.$or = [
+      { createdAt: reportRange },
+      { 'refundInfo.refundedAt': reportRange }
+    ];
   }
   
   // Filtros adicionales
@@ -79,11 +106,48 @@ async function listSalesForReports(filters = {}) {
   
   const sales = await Model.find(query)
     .populate('createdBy', 'name userName')
+    .populate('customer', 'name nombre')
     .populate('company', 'name')
     .sort({ createdAt: -1 })
     .exec();
     
   return sales;
+}
+
+function isInRange(value, filters) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  if (filters.startDate && date < parseReportDate(filters.startDate)) return false;
+  if (filters.endDate && date > parseReportDate(filters.endDate, true)) return false;
+  return true;
+}
+
+async function listSaleOperationsForReports(filters = {}) {
+  const sales = await listSalesForReports(filters);
+  const hasRange = Boolean(filters.startDate || filters.endDate);
+  const operations = [];
+
+  sales.forEach(sale => {
+    const raw = sale.toObject();
+    if (!hasRange || isInRange(sale.createdAt, filters)) {
+      operations.push({ ...raw, operationType: 'sale', operationDate: sale.createdAt });
+    }
+    if (sale.refundInfo?.refundedAt && (!hasRange || isInRange(sale.refundInfo.refundedAt, filters))) {
+      operations.push({
+        ...raw,
+        _id: `refund-${sale._id}`,
+        operationType: 'refund',
+        operationDate: sale.refundInfo.refundedAt,
+        createdBy: sale.refundInfo.refundedBy || sale.createdBy,
+        cashRegister: sale.refundInfo.cashRegister || sale.cashRegister,
+        shift: sale.refundInfo.shift || sale.shift
+      });
+    }
+  });
+
+  return operations.sort((left, right) =>
+    new Date(right.operationDate).getTime() - new Date(left.operationDate).getTime());
 }
 
 async function getSalesSummaryWithHistoricalData(filters = {}) {
@@ -131,9 +195,10 @@ async function getSalesSummaryWithHistoricalData(filters = {}) {
   };
 }
 
-async function updateSell(sellId, sell) {
+async function updateSell(sellId, sell, companyId) {
   const foundSale = await Model.findOne({
     _id: sellId,
+    company: companyId,
   });
 
   if (!foundSale) {
@@ -152,9 +217,10 @@ async function updateSell(sellId, sell) {
   return foundSale.save();
 }
 
-async function removeSell(sellId) {
+async function removeSell(sellId, companyId) {
   const foundSale = await Model.findOne({
     _id: sellId,
+    company: companyId,
   });
 
   if (!foundSale) {
@@ -219,5 +285,6 @@ module.exports = {
   listSalesForReports, 
   getSalesSummaryWithHistoricalData, 
   migrateOldSalesToHistoricalFormat ,
-  findByIdempotencyKey
+  findByIdempotencyKey,
+  listSaleOperationsForReports
 };

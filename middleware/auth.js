@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 const Users = require('../components/users/model');
+const response = require('../network');
 
-const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_EXPIRES_IN || '8h';
+const ACCESS_TOKEN_TTL = process.env.JWT_EXPIRES_IN || process.env.JWT_ACCESS_EXPIRES_IN || '1h';
 
 const normalizeRole = (role = '') => {
   const normalized = `${role}`.trim().toLowerCase();
@@ -40,9 +41,9 @@ const buildAuthUser = (userDocument, decodedToken = {}) => {
     userName: user.userName || decodedToken.userName || '',
     name: user.name || decodedToken.name || '',
     lastNames: user.lastNames || decodedToken.lastNames || '',
-    role: user.role || decodedToken.role || '',
+    role: normalizeRole(user.role || ''),
     typeUser: user.typeUser || decodedToken.typeUser || null,
-    company: user.company || decodedToken.company || null,
+    company: user.company || null,
     photo: user.photo || decodedToken.photo || '',
     tokenVersion: user.tokenVersion ?? decodedToken.tokenVersion ?? 0,
     auth: {
@@ -79,10 +80,7 @@ const authenticateToken = async (req, res, next) => {
   const token = getTokenFromRequest(req);
 
   if (!token) {
-    return res.status(401).json({
-      error: 'Token de acceso requerido',
-      message: 'Debe proporcionar un token vÃ¡lido'
-    });
+    return response.error(req, res, 'Token de acceso requerido', 401);
   }
 
   try {
@@ -181,9 +179,7 @@ const optionalAuth = (req, _res, next) => {
 
 const requireOwnership = (userIdField = 'userId') => (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Usuario no autenticado'
-    });
+    return response.error(req, res, 'Usuario no autenticado', 401);
   }
 
   const resourceUserId = req.params[userIdField] || req.body[userIdField];
@@ -195,10 +191,7 @@ const requireOwnership = (userIdField = 'userId') => (req, res, next) => {
   }
 
   if (resourceUserId && resourceUserId !== currentUserId) {
-    return res.status(403).json({
-      error: 'No autorizado',
-      message: 'Solo puedes acceder a tus propios recursos'
-    });
+    return response.error(req, res, 'Solo puedes acceder a tus propios recursos', 403);
   }
 
   return next();

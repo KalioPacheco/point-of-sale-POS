@@ -16,6 +16,7 @@ function createMockRes() {
       this.statusCode = code;
       return this;
     },
+    send(body) { return this.json(body); },
     json(body) {
       this.payload = body;
       return this;
@@ -25,14 +26,14 @@ function createMockRes() {
   return response;
 }
 
-test('authenticateToken rechaza cuando no llega token', () => {
+test('authenticateToken rechaza cuando no llega token', async () => {
   process.env.JWT_SECRET = 'qa-secret';
 
   const req = { headers: {} };
   const res = createMockRes();
   let nextCalled = false;
 
-  authenticateToken(req, res, () => {
+  await authenticateToken(req, res, () => {
     nextCalled = true;
   });
 
@@ -124,5 +125,5 @@ test('requireOwnership rechaza acceso a recursos de otro usuario', () => {
 
   assert.equal(nextCalled, false);
   assert.equal(res.statusCode, 403);
-  assert.equal(res.payload.error, 'No autorizado');
+  assert.equal(res.payload.error, 'Solo puedes acceder a tus propios recursos');
 });

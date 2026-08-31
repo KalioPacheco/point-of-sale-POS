@@ -6,9 +6,13 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
-const { validateCashMovement } = require('../../middleware/validation');
+const { validateCashMovementCreate, validateCashMovementUpdate } = require('../../middleware/validation');
+const Movement = require('./model');
+const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
 
 const router = express.Router();
+const scopeMovement = scopeResource(Movement, 'movementId');
+router.use(authenticateToken, requireCompanyScope);
 
 
 const handleRequest = (req, res, promise) => {
@@ -17,7 +21,7 @@ const handleRequest = (req, res, promise) => {
     .catch(err => response.error(req, res, err.message, 500, err));
 };
 
-router.post('/create', authenticateToken, requireRole(['admin', 'manager']), validateCashMovement, (req, res) => {
+router.post('/create', authenticateToken, requireRole(['admin', 'manager']), validateCashMovementCreate, (req, res) => {
   const movementData = {
     ...req.body,
     userId: Helper.getUserId(req),
@@ -34,13 +38,13 @@ router.get('/summary/daily/:date', authenticateToken, requireRole(['admin', 'man
 
 
 router.get('/user/:userId', authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
-  const filters = { ...req.query };
+  const filters = { ...req.query, companyId: req.companyId };
   handleRequest(req, res, controller.getUserMovements(req.params.userId, filters));
 });
 
 
 router.get('/cashregister/:cashRegister', authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
-  const filters = { ...req.query };
+  const filters = { ...req.query, companyId: req.companyId };
   handleRequest(req, res, controller.getCashRegisterMovements(req.params.cashRegister, filters));
 });
 
@@ -62,7 +66,7 @@ router.get('/', authenticateToken, requireRole(['admin', 'manager']), (req, res)
 });
 
 
-router.put('/:movementId', authenticateToken, requireRole(['admin', 'manager']), validateCashMovement, (req, res) => {
+router.put('/:movementId', authenticateToken, requireRole(['admin', 'manager']), scopeMovement, validateCashMovementUpdate, (req, res) => {
   const updateData = {
     ...req.body,
     authorizedBy: Helper.getUserId(req)
@@ -71,12 +75,12 @@ router.put('/:movementId', authenticateToken, requireRole(['admin', 'manager']),
 });
 
 
-router.delete('/:movementId', authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
+router.delete('/:movementId', authenticateToken, requireRole(['admin', 'manager']), scopeMovement, (req, res) => {
   handleRequest(req, res, controller.deleteMovement(req.params.movementId));
 });
 
 
-router.get('/:movementId', authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
+router.get('/:movementId', authenticateToken, requireRole(['admin', 'manager']), scopeMovement, (req, res) => {
   handleRequest(req, res, controller.getMovementById(req.params.movementId));
 });
 

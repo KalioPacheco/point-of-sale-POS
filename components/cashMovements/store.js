@@ -1,34 +1,52 @@
 const Model = require('./model');
+const Shift = require('../cashRegisterShifts/model');
 
 async function createMovement(movementData) {
+  const session = await Model.db.startSession();
+  let savedMovement;
   try {
-
-    const movementNumber = await Model.generateMovementNumber();
+    await session.withTransaction(async () => {
+      if (movementData.shiftId) {
+        const shift = await Shift.findOneAndUpdate({
+          _id: movementData.shiftId, company: movementData.companyId,
+          cashRegister: movementData.cashRegister, status: 'open'
+        }, { $inc: { operationRevision: 1 } }, { new: true, session });
+        if (!shift) throw new Error('Open shift not found for cash movement');
+      }
+      const movementNumber = await Model.generateMovementNumber(
+        movementData.companyId,
+        movementData.cashRegister || 'GLOBAL',
+        session
+      );
     
-    const movement = new Model({
-      movementNumber,
-      type: movementData.type,
-      amount: movementData.amount,
-      concept: movementData.concept,
-      description: movementData.description,
-      paymentMethod: movementData.paymentMethod || 'cash',
-      user: movementData.userId,
-      company: movementData.companyId,
-      cashRegister: movementData.cashRegister,
-      saleReference: movementData.saleReference,
-      receiptNumber: movementData.receiptNumber,
-      authorized: movementData.authorized !== undefined ? movementData.authorized : true,
-      authorizedBy: movementData.authorizedBy,
-      notes: movementData.notes
-    });
+      const movement = new Model({
+        movementNumber,
+        type: movementData.type,
+        amount: movementData.amount,
+        concept: movementData.concept,
+        description: movementData.description,
+        paymentMethod: movementData.paymentMethod || 'cash',
+        user: movementData.userId,
+        company: movementData.companyId,
+        cashRegister: movementData.cashRegister,
+        saleReference: movementData.saleReference,
+        shift: movementData.shiftId,
+        receiptNumber: movementData.receiptNumber,
+        authorized: movementData.authorized !== undefined ? movementData.authorized : true,
+        authorizedBy: movementData.authorizedBy,
+        notes: movementData.notes
+      });
 
-    const savedMovement = await movement.save();
+      savedMovement = await movement.save({ session });
+    });
     return await Model.findById(savedMovement.id)
       .populate('user', 'name lastNames userName')
       .populate('company', 'name')
       .populate('saleReference');
   } catch (error) {
     throw new Error(`Error creating movement: ${error.message}`);
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -213,6 +231,7 @@ async function getUserMovements(userId, filters = {}) {
       disable: false, 
       user: userId 
     };
+    if (filters.companyId) query.company = filters.companyId;
 
     if (filters.startDate || filters.endDate) {
       query.createdAt = {};
@@ -238,6 +257,7 @@ async function getCashRegisterMovements(cashRegister, filters = {}) {
       // eslint-disable-next-line object-shorthand
       cashRegister: cashRegister 
     };
+    if (filters.companyId) query.company = filters.companyId;
 
     if (filters.startDate || filters.endDate) {
       query.createdAt = {};

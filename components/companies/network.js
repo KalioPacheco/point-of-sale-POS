@@ -4,10 +4,10 @@ const controller = require('./controller');
 const Helper = require('../../helpers');
 const {
   authenticateToken,
-  requireRole,
-  requireTenant
+  requireRole
 } = require('../../middleware/auth');
-const { validateCompany } = require('../../middleware/validation');
+const { validateCompanyCreate, validateCompanyUpdate } = require('../../middleware/validation');
+const { requireCompanyScope, requireTenantParam } = require('../../middleware/tenant');
 
 const router = express.Router();
 
@@ -101,11 +101,11 @@ const removeCompany = function (req, res) {
     });
 };
 
-router.get('/', authenticateToken, requireTenant, requireRole(['admin']), listCompanies);
-router.get('/:companyId', authenticateToken, requireTenant, requireRole(['admin']), listCompanies);
-router.post('/', authenticateToken, requireTenant, requireRole(['admin']), validateCompany, addCompany);
-router.patch('/:companyId', authenticateToken, requireTenant, requireRole(['admin']), validateCompany, updateCompany);
-router.delete('/:companyId', authenticateToken, requireTenant, requireRole(['admin']), removeCompany);
+router.get('/', authenticateToken, requireCompanyScope, requireRole(['admin']), listCompanies);
+router.get('/:companyId', authenticateToken, requireCompanyScope, requireRole(['admin']), requireTenantParam('companyId'), listCompanies);
+router.post('/', authenticateToken, requireCompanyScope, requireRole(['admin']), validateCompanyCreate, addCompany);
+router.patch('/:companyId', authenticateToken, requireCompanyScope, requireRole(['admin']), requireTenantParam('companyId'), validateCompanyUpdate, updateCompany);
+router.delete('/:companyId', authenticateToken, requireCompanyScope, requireRole(['admin']), requireTenantParam('companyId'), removeCompany);
 
 
 module.exports = router;

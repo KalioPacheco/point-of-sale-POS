@@ -19,7 +19,7 @@ test('createCashRegisterCut valida campos requeridos', () => {
   );
 });
 
-test('createCashRegisterCut rechaza cuando shiftEnd <= shiftStart', () => {
+test('createCashRegisterCut rechaza fechas del cliente sin turno persistido', () => {
   assert.throws(
     () => {
       controller.createCashRegisterCut({
@@ -31,7 +31,7 @@ test('createCashRegisterCut rechaza cuando shiftEnd <= shiftStart', () => {
         actualCash: 100,
       });
     },
-    /End time must be after start time/
+    /Shift ID required/
   );
 });
 
@@ -48,6 +48,7 @@ test('createCashRegisterCut delega a store cuando los datos son validos', async 
   });
 
   const payload = {
+    shiftId: 'shift-1',
     cashRegister: 'CAJA-1',
     cashierId: 'cashier-1',
     administratorId: 'admin-1',

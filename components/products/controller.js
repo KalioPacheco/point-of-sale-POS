@@ -33,28 +33,28 @@ function removeProduct(productId, companyId = null) {
   return store.remove(productId, companyId);
 }
 
-function addStock(productId, quantity, userId, reason, companyId = null) {
+function addStock(productId, quantity, userId, reason, companyId = null, options = {}) {
   if (!productId || !quantity || quantity <= 0) {
     return Promise.reject('productId and positive quantity are required');
   }
   
-  return store.addStock(productId, quantity, userId, reason, companyId);
+  return store.addStock(productId, quantity, userId, reason, companyId, options);
 }
 
-function reduceStock(productId, quantity, userId, reason, companyId = null) {
+function reduceStock(productId, quantity, userId, reason, companyId = null, options = {}) {
   if (!productId || !quantity || quantity <= 0) {
     return Promise.reject('productId and positive quantity are required');
   }
   
-  return store.reduceStock(productId, quantity, userId, reason, companyId);
+  return store.reduceStock(productId, quantity, userId, reason, companyId, options);
 }
 
-function setStock(productId, quantity, reason, companyId = null) {
+function setStock(productId, quantity, reason, companyId = null, userId = null, options = {}) {
   if (!productId || quantity < 0) {
     return Promise.reject('productId and non-negative quantity are required');
   }
   
-  return store.setStock(productId, quantity, null, reason, companyId);
+  return store.setStock(productId, quantity, userId, reason, companyId, options);
 }
 
 function getStockHistory(productId, companyId = null) {
@@ -131,24 +131,28 @@ function enableVariant(productId, variantId, reason, companyId = null) {
 }
 
 
-async function checkCouponEligibility(productIds, couponId) {
+async function checkCouponEligibility(productIds, couponId, companyId) {
   try {
     if (!productIds || !Array.isArray(productIds)) {
       return Promise.reject(new Error('Product IDs array is required'));
     }
     
     const Coupon = require('../coupons/model'); // eslint-disable-line global-require
-    const coupon = await Coupon.findById(couponId);
+    const coupon = await Coupon.findOne({ _id: couponId, company: companyId, disable: false });
     
     if (!coupon) {
       return Promise.reject(new Error('Coupon not found'));
     }
     
+    const companyProducts = await store.list(null, companyId, { ids: productIds, disable: false });
+    const companyProductIds = new Set(companyProducts.map(product => String(product._id)));
+    const scopedProductIds = productIds.filter(productId => companyProductIds.has(String(productId)));
+
     if (coupon.applyToAllProducts) {
       return {
-        eligible: true,
-        eligibleProducts: productIds,
-        ineligibleProducts: []
+        eligible: scopedProductIds.length > 0,
+        eligibleProducts: scopedProductIds,
+        ineligibleProducts: productIds.filter(productId => !companyProductIds.has(String(productId)))
       };
     }
     
@@ -159,7 +163,7 @@ async function checkCouponEligibility(productIds, couponId) {
     productIds.forEach(productId => {
       const isEligible = coupon.applicableProducts.some(
         id => id.toString() === productId.toString()
-      );
+      ) && companyProductIds.has(String(productId));
       
       if (isEligible) {
         eligibleProducts.push(productId);
@@ -209,7 +213,7 @@ async function getProductsEligibleForCoupons(companyId, productIds = null) {
 
 async function calculateProductPriceWithCoupon(productId, couponCode, companyId, quantity = 1) {
   try {
-    const product = await store.get(productId);
+    const product = await store.get(productId, companyId);
     if (!product) {
       return Promise.reject(new Error('Product not found'));
     }

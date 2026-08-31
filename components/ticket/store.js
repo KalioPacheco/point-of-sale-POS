@@ -5,6 +5,10 @@ const SalesModel = require('../sales/model');
 const CashRegisterCutsModel = require('../cashRegisterCuts/model');
 const UsersModel = require('../users/model');
 const CompaniesModel = require('../companies/model');
+const { Product, StockHistory } = require('../products/model');
+const CashMovement = require('../cashMovements/model');
+const Coupon = require('../coupons/model');
+const CashRegisterShift = require('../cashRegisterShifts/model');
 
 const DEFAULT_STORE_CONFIG = {
   name: 'Nombre de la Empresa',
@@ -195,10 +199,11 @@ async function createTicket(ticketData) {
 
     const ticketNumber = await Model.generateTicketNumber(
       ticketData.ticketType,
-      ticketData.transactionInfo?.cashRegister || 'CAJA-1'
+      ticketData.transactionInfo?.cashRegister || 'CAJA-1',
+      companyId
     );
 
-    const storeInfoSource = ticketData.storeInfo?.name && 
+    const storeInfoSource = ticketData.storeInfo?.name &&
       ticketData.storeInfo.name !== 'Nombre de la Empresa' 
       ? ticketData.storeInfo 
       : await getStoreInfo(ticketData.companyId);
@@ -325,7 +330,7 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
 
 async function createTicketFromSaleWithTaxes(saleId, userId, companyId) {
   try {
-    const sale = await SalesModel.findById(saleId)
+    const sale = await SalesModel.findOne({ _id: saleId, company: companyId, disable: false })
       .populate('products.productId', 'name')
       .populate('createdBy', 'userName name');
 
@@ -344,7 +349,7 @@ async function createTicketFromSaleWithTaxes(saleId, userId, companyId) {
 
 async function createTicketFromSale(saleId, userId, companyId) {
   try {
-    const sale = await SalesModel.findById(saleId)
+    const sale = await SalesModel.findOne({ _id: saleId, company: companyId, disable: false })
       .populate('products.productId', 'name')
       .populate('createdBy', 'userName name');
 
@@ -365,7 +370,7 @@ async function createTicketFromSale(saleId, userId, companyId) {
 
 async function createTicketFromCut(cutId, _unusedUserId, companyId) {
   try {
-    const cut = await CashRegisterCutsModel.findById(cutId)
+    const cut = await CashRegisterCutsModel.findOne({ _id: cutId, company: companyId })
       .populate('cashier', 'userName name');
 
     if (!cut) throw new Error('Cut not found');
@@ -399,7 +404,10 @@ async function getTickets(filters = {}) {
   try {
     const query = { disable: false };
 
-    if (filters.ticketType) query.ticketType = filters.ticketType;
+    if (filters.ticketType) {
+      const ticketTypes = String(filters.ticketType).split(',').filter(Boolean);
+      query.ticketType = ticketTypes.length > 1 ? { $in: ticketTypes } : ticketTypes[0];
+    }
     if (filters.cashRegister) query['transactionInfo.cashRegister'] = filters.cashRegister;
     if (filters.companyId && filters.companyId !== 'default-company-id') {
       query.company = filters.companyId;
@@ -717,7 +725,11 @@ async function generateTicketPDFFromSale(saleId, format = '80mm', res, userId, c
   try {
     if (!saleId) throw new Error('Sale ID required');
 
-    const existingTicket = await Model.findOne({ saleId, disable: false }).sort({ createdAt: -1 });
+    const existingTicket = await Model.findOne({
+      saleId,
+      company: companyId,
+      disable: false
+    }).sort({ createdAt: -1 });
 
     let ticketId = existingTicket?.id;
     if (!ticketId) {
@@ -751,10 +763,13 @@ async function reprintTicket(ticketId, userId) {
   }
 }
 
-async function cancelTicket(ticketId, reason, _unusedUserId) {
+async function cancelTicket(ticketId, reason, userId, companyId) {
   try {
-    const ticket = await Model.findById(ticketId);
+    const ticket = await Model.findOne({ _id: ticketId, company: companyId });
     if (!ticket) throw new Error('Ticket not found');
+    if (ticket.ticketType === 'sale' && ticket.saleId && ticket.status === 'active') {
+      return processRefundTicket({ originalSaleId: ticket.saleId, reason }, userId, companyId);
+    }
 
     ticket.status = 'cancelled';
     ticket.notes = `${ticket.notes || ''} | CANCELADO: ${reason}`.trim();
@@ -882,38 +897,164 @@ async function processSaleTicketWithCoupon(saleData, userId, companyId) {
 }
 
 async function processRefundTicket(refundData, userId, companyId) {
+  const session = await mongoose.startSession();
   try {
-    const sale = await SalesModel.findById(refundData.originalSaleId);
-    if (!sale) throw new Error('Sale not found');
+    let refundTicket;
+    await session.withTransaction(async () => {
+      const sale = await SalesModel.findOne({
+        _id: refundData.originalSaleId,
+        company: companyId,
+        status: 'confirmed',
+        disable: false
+      }).session(session);
+      if (!sale) {
+        const existingSale = await SalesModel.findOne({
+          _id: refundData.originalSaleId,
+          company: companyId,
+          disable: false
+        }).select('status').session(session);
+        if (existingSale) throw new Error('Sale already refunded or cancelled');
+        throw new Error('Sale not found');
+      }
+      if (!refundData.reason?.trim()) throw new Error('Refund reason is required');
 
-    const storeInfo = await getStoreInfo(companyId);
-    const user = await UsersModel.findById(userId);
+      const shiftFilter = {
+        company: companyId,
+        cashier: userId,
+        status: 'open'
+      };
+      if (refundData.shiftId) shiftFilter._id = refundData.shiftId;
+      if (refundData.cashRegister) shiftFilter.cashRegister = refundData.cashRegister;
+      const refundShift = await CashRegisterShift.findOneAndUpdate(shiftFilter,
+        { $inc: { operationRevision: 1 } }, { new: true, session });
+      if (!refundShift) throw new Error('An open cashier shift is required for a refund');
 
-    return createTicket({
-      ticketType: 'refund',
-      saleId: sale.id,
-      storeInfo,
-      transactionInfo: {
-        date: new Date(),
-        cashRegister: refundData.cashRegister || 'CAJA-1',
-        cashier: {
-          id: userId,
-          name: user?.name || user?.userName || 'Cajero'
+      for (const item of sale.products) {
+        let previousStock;
+        let updateResult;
+        if (item.variantId) {
+          const product = await Product.findOne({
+            _id: item.productId,
+            company: companyId,
+            'variants._id': item.variantId
+          }).session(session);
+          const variant = product?.variants.id(item.variantId);
+          if (!variant) throw new Error(`Product variant not found for ${item.priceSnapshot.name}`);
+          previousStock = Number(variant.stock || 0);
+          updateResult = await Product.updateOne(
+            { _id: item.productId, company: companyId, 'variants._id': item.variantId },
+            { $inc: { 'variants.$.stock': item.quantity } },
+            { session }
+          );
+        } else {
+          const product = await Product.findOne({
+            _id: item.productId,
+            company: companyId
+          }).session(session);
+          if (!product) throw new Error(`Product not found for ${item.priceSnapshot.name}`);
+          previousStock = Number(product.stock || 0);
+          updateResult = await Product.updateOne(
+            { _id: item.productId, company: companyId },
+            { $inc: { stock: item.quantity } },
+            { session }
+          );
         }
-      },
-      items: refundData.items || [],
-      totals: { 
-        total: refundData.refundAmount || 0,
-        subtotal: refundData.refundAmount || 0,
-        totalTaxes: 0 
-      },
-      payment: { method: 'efectivo' },
-      notes: `Reembolso: ${sale.saleNumber || sale.id} | ${refundData.reason || 'N/A'}`,
-      companyId
+        if (updateResult.modifiedCount !== 1) {
+          throw new Error(`Inventory could not be restored for ${item.priceSnapshot.name}`);
+        }
+        await StockHistory.create([{
+          product: item.productId,
+          user: userId,
+          type: 'add',
+          quantity: item.quantity,
+          previousStock,
+          newStock: previousStock + item.quantity,
+          reason: `Devolucion venta ${sale._id}`
+        }], { session });
+      }
+
+      sale.status = 'refunded';
+      sale.refund = true;
+      sale.updated = true;
+      sale.updatedAt = new Date();
+      sale.refundInfo = {
+        refundedAt: new Date(),
+        refundedBy: userId,
+        reason: refundData.reason.trim(),
+        shift: refundShift._id,
+        cashRegister: refundShift.cashRegister
+      };
+      await sale.save({ session });
+
+      await CashMovement.create([{
+        movementNumber: `REFUND-${sale._id}`,
+        type: 'refund',
+        amount: sale.finalTotal,
+        concept: `Devolucion ${sale._id}`,
+        description: refundData.reason.trim(),
+        paymentMethod: sale.payment.method,
+        user: userId,
+        company: companyId,
+        cashRegister: refundShift.cashRegister,
+        saleReference: sale._id,
+        shift: refundShift._id,
+        authorized: true,
+        authorizedBy: userId
+      }], { session });
+
+      if (sale.couponId) {
+        await Coupon.updateOne(
+          { _id: sale.couponId, company: companyId },
+          { $pull: { usageHistory: { saleId: sale._id } } },
+          { session }
+        );
+      }
+
+      await Model.updateOne(
+        { saleId: sale._id, ticketType: 'sale', company: companyId },
+        { $set: { status: 'refunded' } },
+        { session }
+      );
+
+      const paymentMethods = {
+        cash: 'efectivo', card: 'tarjeta', transfer: 'transferencia', mixed: 'mixto'
+      };
+      [refundTicket] = await Model.create([{
+        ticketNumber: `REFUND-${sale._id}`,
+        ticketType: 'refund',
+        saleId: sale._id,
+        company: companyId,
+        transactionInfo: {
+          date: new Date(),
+          cashRegister: refundShift.cashRegister,
+          cashier: { id: userId }
+        },
+        items: sale.products.map(item => ({
+          productId: item.productId,
+          productName: item.priceSnapshot.name,
+          quantity: item.quantity,
+          unitPrice: item.priceSnapshot.price,
+          totalTaxes: item.taxAmount,
+          totalPrice: item.total,
+          variant: item.variantId ? { id: item.variantId, name: item.variantName } : undefined
+        })),
+        totals: {
+          subtotal: sale.subtotal,
+          totalTaxes: sale.totalTaxes,
+          discounts: sale.couponDiscount,
+          total: sale.finalTotal
+        },
+        payment: { method: paymentMethods[sale.payment.method] },
+        notes: refundData.reason.trim()
+      }], { session });
     });
+
+    return { success: true, ticket: refundTicket, message: 'Refund completed' };
   } catch (error) {
     console.error('Error processing refund:', error);
     throw error;
+  } finally {
+    await session.endSession();
   }
 }
 

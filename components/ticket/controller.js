@@ -152,6 +152,7 @@ const createTicketWithCoupon = async (saleData, ticketConfig = {}, companyId) =>
     const appliedCoupon = buildAppliedCoupon(saleData);
     const ticketData = {
       ticketType: 'sale',
+      companyId: companyId || saleData.company,
       saleId: saleData.id,
       
       
@@ -200,7 +201,7 @@ const createTicketWithCoupon = async (saleData, ticketConfig = {}, companyId) =>
       },
       
 
-      company: saleData.company || companyId
+      company: saleData.company
     };
   
     validateTicketData(ticketData);
@@ -261,7 +262,7 @@ const processSaleTicketWithCoupon = async (saleData, userId, companyId) => {
       appliedCoupon: buildAppliedCoupon(saleData)
     };
     
-    return store.processSaleTicketWithCoupon(saleDataWithCoupon, userId, companyId);
+    return store.processSaleTicket(saleDataWithCoupon, userId, companyId);
   } catch (error) {
     throw new Error(`Error processing sale ticket with coupon: ${error.message}`);
   }
@@ -417,9 +418,9 @@ const reprintTicket = (ticketId, userId) => {
   return store.reprintTicket(ticketId, userId);
 };
 
-const cancelTicket = (ticketId, reason, userId) => {
+const cancelTicket = (ticketId, reason, userId, companyId) => {
   validateId(ticketId, 'Ticket ID');
-  return store.cancelTicket(ticketId, reason, userId);
+  return store.cancelTicket(ticketId, reason, userId, companyId);
 };
 
 const getTicketStats = (filters = {}) => store.getTicketStats(filters);

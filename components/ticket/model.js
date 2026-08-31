@@ -1,4 +1,10 @@
 const mongoose = require('mongoose');
+const {
+  Counter,
+  companyToken,
+  counterKey,
+  formatSequence
+} = require('../operationalCounters/model');
 
 const { Schema } = mongoose;
 
@@ -52,6 +58,7 @@ const ticketSchema = new Schema({
     totalTaxes: { type: Number, default: 0 }, 
     totalPrice: Number,
     variant: {
+      id: { type: Schema.ObjectId },
       name: String,
       attributes: Schema.Types.Mixed
     }
@@ -128,30 +135,36 @@ const ticketSchema = new Schema({
     default: 'active' 
   },
   
-  company: { type: Schema.ObjectId, ref: 'Companies' },
+  company: { type: Schema.ObjectId, ref: 'Companies', required: true },
   disable: { type: Boolean, default: false }
   
 }, { timestamps: true });
 
 
-ticketSchema.statics.generateTicketNumber = async function generateTicketNumber(ticketType, cashRegister) {
+ticketSchema.statics.generateTicketNumber = async function generateTicketNumber(
+  ticketType,
+  cashRegister,
+  company,
+  session = null
+) {
+  if (!company) throw new Error('Company is required to generate a ticket number');
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
   const typePrefix = ticketType.toUpperCase().slice(0, 3);
-  const prefix = `${typePrefix}-${cashRegister}-${dateStr}`;
+  const prefix = `${typePrefix}-${companyToken(company)}-${cashRegister}-${dateStr}`;
   
   const lastTicket = await this.findOne({
     ticketNumber: { $regex: `^${prefix}` }
-  }).sort({ ticketNumber: -1 });
-  
-  let sequence = 1;
-  if (lastTicket?.ticketNumber) {
-    const parts = lastTicket.ticketNumber.split('-');
-    const lastSequence = parseInt(parts[parts.length - 1], 10) || 0;
-    sequence = lastSequence + 1;
-  }
-  
-  return `${prefix}-${sequence.toString().padStart(4, '0')}`;
+  }).sort({ ticketNumber: -1 }).session(session).lean();
+  const baseline = Number(lastTicket?.ticketNumber?.split('-').pop()) || 0;
+  const sequence = await Counter.next(counterKey({
+    kind: 'ticket',
+    company,
+    cashRegister,
+    date: dateStr,
+    subtype: ticketType
+  }), baseline, session);
+  return formatSequence(prefix, sequence, 4);
 };
 
 
@@ -237,7 +250,8 @@ ticketSchema.methods.generateTaxBreakdown = function generateTaxBreakdown() {
           };
         }
         taxSummary[taxKey].totalAmount += tax.amount;
-      });
+});
+
     }
   });
   
@@ -246,6 +260,11 @@ ticketSchema.methods.generateTaxBreakdown = function generateTaxBreakdown() {
     totalAmount: parseFloat(tax.totalAmount.toFixed(2))
   }));
 };
+
+ticketSchema.index(
+  { saleId: 1, ticketType: 1 },
+  { unique: true, partialFilterExpression: { ticketType: 'sale' } }
+);
 
 ticketSchema.methods.markAsPrinted = function markAsPrinted(userId) {
   this.printInfo.printed = true;
@@ -265,7 +284,6 @@ ticketSchema.methods.reprint = function reprint(userId) {
   return this.save();
 };
 
-ticketSchema.index({ ticketNumber: 1 });
 ticketSchema.index({ ticketType: 1, createdAt: -1 });
 ticketSchema.index({ saleId: 1 });
 ticketSchema.index({ cutId: 1 });
