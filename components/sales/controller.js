@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const store = require('./store');
+const { requestFingerprint, validateReplay } = require('./idempotency');
 const Sale = require('./model');
 const { Product, StockHistory } = require('../products/model');
 const Coupon = require('../coupons/model');
@@ -8,6 +9,7 @@ const CashRegisterShift = require('../cashRegisterShifts/model');
 const Ticket = require('../ticket/model');
 const Company = require('../companies/model');
 const Customer = require('../customer/model');
+const User = require('../users/model');
 const couponsController = require('../coupons/controller');
 
 // Product snapshots populate these refs, so sales must register them independently of route load order.
@@ -302,6 +304,9 @@ const ticketPaymentMethod = {
 
 async function createSaleTicket(sale, prepared, session) {
   const company = await Company.findById(sale.company).session(session).lean();
+  const cashier = await User.findById(sale.createdBy).session(session).select('name lastNames userName').lean();
+  const customer = sale.customer
+    ? await Customer.findById(sale.customer).session(session).select('name').lean() : null;
   const address = company?.address
     ? [company.address.street, company.address.number?.ext, company.address.city]
       .filter(Boolean).join(', ')
@@ -322,7 +327,8 @@ async function createSaleTicket(sale, prepared, session) {
     transactionInfo: {
       date: sale.createdAt,
       cashRegister: sale.cashRegister,
-      cashier: { id: sale.createdBy }
+      cashier: { id: sale.createdBy, name: [cashier?.name, cashier?.lastNames].filter(Boolean).join(' ') || cashier?.userName },
+      customer: customer ? { id: customer._id, name: customer.name } : undefined
     },
     items: prepared.productSnapshots.map(item => ({
       productId: item.productId,
@@ -375,12 +381,17 @@ async function addSell(sell, idempotencyKey) {
   if (!idempotencyKey) throw new Error('Idempotency key is required');
 
   const existing = await store.findByIdempotencyKey(idempotencyKey, sell.companyId);
-  if (existing) return existing;
+  if (existing) return validateReplay(existing, sell);
 
   const session = await mongoose.startSession();
   let saleId;
   try {
     await session.withTransaction(async () => {
+      const replay = await Sale.findOne({ company: sell.companyId, idempotencyKey }).session(session);
+      if (replay) {
+        saleId = validateReplay(replay, sell)._id;
+        return;
+      }
       const shift = await CashRegisterShift.findOneAndUpdate({
         _id: sell.shiftId,
         company: sell.companyId,
@@ -388,7 +399,7 @@ async function addSell(sell, idempotencyKey) {
         cashier: sell.createdBy,
         status: 'open'
       }, { $inc: { operationRevision: 1 } }, { new: true, session });
-      if (!shift) throw new Error('No open shift exists for this cash register');
+      if (!shift) throw Object.assign(new Error('No open shift exists for this cash register'), { status: 400 });
 
       if (sell.customerId) {
         const customer = await Customer.findOne({
@@ -402,6 +413,7 @@ async function addSell(sell, idempotencyKey) {
       const prepared = await prepareSale(sell, session);
       const sale = await store.add({
         idempotencyKey,
+        requestFingerprint: requestFingerprint(sell),
         company: sell.companyId,
         createdBy: sell.createdBy,
         customer: sell.customerId || undefined,
@@ -435,9 +447,9 @@ async function addSell(sell, idempotencyKey) {
   } catch (error) {
     if (error.code === 11000) {
       const duplicate = await store.findByIdempotencyKey(idempotencyKey, sell.companyId);
-      if (duplicate) return duplicate;
+      if (duplicate) return validateReplay(duplicate, sell);
     }
-    throw new Error('Error adding sale: ' + error.message);
+    throw error;
   } finally {
     await session.endSession();
   }

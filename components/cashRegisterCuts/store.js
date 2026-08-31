@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const Model = require('./model');
 const UsersModel = require('../users/model');
+const Company = require('../companies/model');
 const CashRegisterShift = require('../cashRegisterShifts/model');
 
 
@@ -44,7 +45,9 @@ async function createCashRegisterCut(cutData) {
         await Model.generateCutNumber(cutData.cashRegister, cutData.companyId, session);
       // Recalculate legacy partial cuts instead of trusting their possibly stale snapshot.
       const cut = existing || new Model();
+      const company = await Company.findById(cutData.companyId).session(session).select('name').lean();
       cut.set({
+        companyName: existing?.companyName || company?.name,
         cutNumber, cashRegister: cutData.cashRegister, cashier: shift.cashier,
         administrator: cutData.administratorId, shift: shift._id,
         shiftStart: shift.openedAt, shiftEnd: shift.closedAt || new Date(),
@@ -122,14 +125,15 @@ async function generateCutPDFDirect(cutId, res) {
   doc.pipe(res);
 
   doc.fontSize(18).text('CORTE DE CAJA', { align: 'center' });
-  doc.fontSize(12).text('Mi Tienda POS', { align: 'center' });
+  const company = cut.companyName ? null : await Company.findById(cut.company).select('name').lean();
+  doc.fontSize(12).text(cut.companyName || company?.name || 'Empresa no disponible', { align: 'center' });
   doc.moveDown(2);
 
   doc.text(`Corte: ${cut.cutNumber}`);
   doc.text(`Caja: ${cut.cashRegister}`);
   doc.text(`Fecha: ${cut.cutDate.toLocaleDateString('es-MX')}`);
-  doc.text(`Cajero: ${cashierData?.name || 'N/A'}`);
-  doc.text(`Admin: ${adminData?.name || 'N/A'}`);
+  doc.text(`Cajero: ${cashierData?.name || cashierData?.userName || 'N/A'}`);
+  doc.text(`Admin: ${adminData?.name || adminData?.userName || 'N/A'}`);
   doc.moveDown();
 
   doc.text(`Turno: ${cut.shiftStart.toLocaleString('es-MX')} - ${cut.shiftEnd.toLocaleString('es-MX')}`);
@@ -137,15 +141,25 @@ async function generateCutPDFDirect(cutId, res) {
 
   doc.fontSize(14).text('RESUMEN DE VENTAS:');
   doc.fontSize(12);
-  doc.text(`Efectivo: ${(cut.salesSummary.cash.net || 0).toLocaleString()}`);
-  doc.text(`Tarjeta: ${(cut.salesSummary.card.net || 0).toLocaleString()}`);
-  doc.text(`Total: ${(cut.salesSummary.netSales || 0).toLocaleString()}`);
+  const money = value => `$${Number(value || 0).toFixed(2)}`;
+  [['cash', 'Efectivo'], ['card', 'Tarjeta'], ['transfer', 'Transferencia'], ['mixed', 'Mixto']].forEach(([method, label]) => {
+    const amounts = cut.salesSummary[method];
+    doc.text(`${label}: ventas ${money(amounts.sales)} - devoluciones ${money(amounts.refunds)} = ${money(amounts.net)}`);
+  });
+  doc.text(`Mixto / efectivo neto: ${money(cut.salesSummary.mixed.cashNet)}`);
+  doc.text(`Mixto / tarjeta neta: ${money(cut.salesSummary.mixed.cardNet)}`);
+  doc.text(`Ventas brutas: ${money(cut.salesSummary.totalSales)}`);
+  doc.text(`Devoluciones: ${money(cut.salesSummary.totalRefunds)}`);
+  doc.text(`Total neto: ${money(cut.salesSummary.netSales)}`);
   doc.text(`Ventas: ${cut.salesSummary.salesCount || 0}`);
+  doc.text(`Numero de devoluciones: ${cut.salesSummary.refundsCount || 0}`);
   doc.moveDown();
 
   doc.fontSize(14).text('CONTROL DE EFECTIVO:');
   doc.fontSize(12);
   doc.text(`Inicial: ${(cut.cashControl.initialCash || 0).toLocaleString()}`);
+  doc.text(`Entradas manuales: ${money(cut.cashControl.movementsBreakdown?.income)}`);
+  doc.text(`Salidas manuales: ${money(cut.cashControl.movementsBreakdown?.expenses)}`);
   doc.text(`Esperado: ${(cut.cashControl.expectedCash || 0).toLocaleString()}`);
   doc.text(`Contado: ${(cut.cashControl.actualCash || 0).toLocaleString()}`);
   
