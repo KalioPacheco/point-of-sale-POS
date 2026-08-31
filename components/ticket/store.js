@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const { amountRow } = require('./pdfLayout');
 const mongoose = require('mongoose');
 const Model = require('./model');
 const SalesModel = require('../sales/model');
@@ -515,7 +516,9 @@ async function generateTicketData(ticketId) {
       date: ticket.transactionInfo.date.toLocaleDateString('es-MX'),
       time: ticket.transactionInfo.date.toLocaleTimeString('es-MX'),
       cashRegister: ticket.transactionInfo.cashRegister,
-      cashier: ticket.transactionInfo.cashier.name,
+      cashier: ticket.transactionInfo.cashier.name
+        || ticket.transactionInfo.cashier.id?.name
+        || ticket.transactionInfo.cashier.id?.userName,
       items: ticket.items.map(item => ({
         name: item.productName,
         quantity: item.quantity,
@@ -563,6 +566,10 @@ async function generateTicketPDF(ticketId, format, res) {
     const data = await generateTicketData(ticketId);
     const width = format === '58mm' ? 164 : 226;
     const doc = new PDFDocument({ size: [width, 841], margin: 10 });
+    const fullText = (value, options = {}) => doc.text(value, 10, doc.y, {
+      width: width - 20, align: 'left', ...options
+    });
+    const row = (label, value) => amountRow(doc, width, label, value);
 
     if (res) {
       res.setHeader('Content-Type', 'application/pdf');
@@ -574,6 +581,7 @@ async function generateTicketPDF(ticketId, format, res) {
     doc.fontSize(14).text(data.storeName.toUpperCase(), { align: 'center' });
     doc.moveDown(0.3);
     doc.fontSize(8).text(data.storeAddress, { align: 'center' });
+    if (data.taxId) fullText(`RFC: ${data.taxId}`, { align: 'center' });
     
     if (data.storePhone) {
       doc.moveDown(0.2);
@@ -586,11 +594,12 @@ async function generateTicketPDF(ticketId, format, res) {
 
     // TICKET INFO
     doc.moveDown(0.5);
+    if (data.ticketType === 'refund') fullText('DEVOLUCION', { align: 'center' });
     doc.fontSize(8).text(`${data.ticketNumber}          ${data.date} ${data.time}`, { align: 'center' });
     doc.moveDown(0.8);
 
     // PRODUCTOS/ITEMS
-    if (data.ticketType === 'sale' && data.items.length > 0) {
+    if (['sale', 'refund'].includes(data.ticketType) && data.items.length > 0) {
       doc.fontSize(7);
       doc.text('CANT  PCIO U.  %DESC  IMPORTE');
       doc.text('--------------------------------');
@@ -626,8 +635,7 @@ async function generateTicketPDF(ticketId, format, res) {
     if (data.subtotal || (data.totalTaxes > 0 || data.discounts > 0)) {
       doc.fontSize(8);
       const baseSubtotal = data.subtotal || (data.total + (data.discounts || 0) - (data.totalTaxes || 0));
-      doc.text('SUBTOTAL:', 10, doc.y, { width: width - 80 });
-      doc.text(`$${baseSubtotal.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
+      row('SUBTOTAL:', `$${baseSubtotal.toFixed(2)}`);
       doc.moveDown(0.3);
     }
 
@@ -637,13 +645,12 @@ async function generateTicketPDF(ticketId, format, res) {
 
       if (data.couponCode) {
         const couponText = data.couponName ? data.couponName : `CUPÓN: ${data.couponCode}`;
-        doc.text(couponText);
+        fullText(couponText);
         doc.moveDown(0.2);
       }
 
       if (data.discounts > 0) {
-        doc.text('DESCUENTO:', 10, doc.y, { width: width - 80 });
-        doc.text(`-$${data.discounts.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
+        row('DESCUENTO:', `-$${data.discounts.toFixed(2)}`);
         doc.moveDown(0.3);
       }
       
@@ -652,19 +659,17 @@ async function generateTicketPDF(ticketId, format, res) {
     }
 
     // IMPUESTOS
-    if (data.taxBreakdown && data.taxBreakdown.length > 0 && data.totalTaxes > 0) {
+    if (data.totalTaxes > 0) {
       doc.fontSize(8);
-      doc.text('IMPUESTOS:');
+      fullText('IMPUESTOS:');
       doc.fontSize(7);
       
       data.taxBreakdown.forEach(tax => {
-        doc.text(`${tax.name}:`, 10, doc.y, { width: width - 80 });
-        doc.text(`$${tax.totalAmount.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
+        row(`${tax.name}:`, `$${tax.totalAmount.toFixed(2)}`);
         doc.moveDown(0.2);
       });
       
-      doc.text('TOTAL IMPUESTOS:', 10, doc.y, { width: width - 80 });
-      doc.text(`$${data.totalTaxes.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
+      row('TOTAL IMPUESTOS:', `$${data.totalTaxes.toFixed(2)}`);
       doc.moveDown(0.3);
       
       doc.text('--------------------------------');
@@ -672,8 +677,7 @@ async function generateTicketPDF(ticketId, format, res) {
     }
 
     doc.fontSize(10);
-    doc.text('TOTAL:', 10, doc.y, { width: width - 80 });
-    doc.text(`$${data.total.toFixed(2)}`, width - 70, doc.y - 10, { width: 60, align: 'right' });
+    row('TOTAL:', `$${data.total.toFixed(2)}`);
     doc.fontSize(8);
     doc.moveDown(0.5);
 
@@ -684,33 +688,32 @@ async function generateTicketPDF(ticketId, format, res) {
       transferencia: 'TRANSFERENCIA'
     };
     
-    doc.text('FORMA DE PAGO:');
-    doc.text(methods[data.paymentMethod] || 'NO ESPECIFICADO');
+    fullText('FORMA DE PAGO:');
+    fullText(methods[data.paymentMethod] || 'NO ESPECIFICADO');
     doc.moveDown(0.3);
 
     if (['efectivo', 'mixto'].includes(data.paymentMethod)) {
-      doc.text('EFECTIVO:');
       const cash = data.paymentMethod === 'efectivo' 
         ? data.cashReceived || data.total
         : data.cashAmount || 0;
-      doc.text(`$${cash.toFixed(2)}`, { align: 'right' });
+      row('EFECTIVO:', `$${cash.toFixed(2)}`);
       doc.moveDown(0.3);
     }
+    if (data.paymentMethod === 'mixto') row('TARJETA:', `$${Number(data.cardAmount || 0).toFixed(2)}`);
 
-    doc.text('ADEUDO: $0.00', { align: 'left' });
-    doc.text('CAMBIO:', { align: 'left' });
-    doc.text(`$${(data.change || 0).toFixed(2)}`, { align: 'right' });
+    fullText('ADEUDO: $0.00');
+    row('CAMBIO:', `$${(data.change || 0).toFixed(2)}`);
     doc.moveDown(0.5);
 
-    doc.text('CLIENTE:');
-    doc.text(data.customerName?.trim() || 'PÚBLICO GENERAL');
+    fullText('CLIENTE:');
+    fullText(data.customerName?.trim() || 'PÚBLICO GENERAL');
     doc.moveDown(0.4);
 
-    doc.text('CAJERO:');
-    doc.text(data.cashier || 'N/A');
+    fullText('CAJERO:');
+    fullText(data.cashier || 'N/A');
     doc.moveDown(0.5);
     doc.fontSize(6);
-    doc.text(`Generado: ${new Date().toLocaleString('es-MX')}`, { align: 'center' });
+    fullText(`Generado: ${new Date().toLocaleString('es-MX')}`, { align: 'center' });
 
     doc.end();
     return doc;
@@ -1019,15 +1022,19 @@ async function processRefundTicket(refundData, userId, companyId) {
       const paymentMethods = {
         cash: 'efectivo', card: 'tarjeta', transfer: 'transferencia', mixed: 'mixto'
       };
+      const cashier = await UsersModel.findById(userId).session(session).select('name lastNames userName').lean();
+      const originalTicket = await Model.findOne({ saleId: sale._id, ticketType: 'sale', company: companyId }).session(session);
       [refundTicket] = await Model.create([{
         ticketNumber: `REFUND-${sale._id}`,
         ticketType: 'refund',
         saleId: sale._id,
         company: companyId,
+        storeInfo: originalTicket?.storeInfo || await getStoreInfo(companyId),
         transactionInfo: {
           date: new Date(),
           cashRegister: refundShift.cashRegister,
-          cashier: { id: userId }
+          customer: originalTicket?.transactionInfo?.customer,
+          cashier: { id: userId, name: [cashier?.name, cashier?.lastNames].filter(Boolean).join(' ') || cashier?.userName }
         },
         items: sale.products.map(item => ({
           productId: item.productId,
@@ -1044,7 +1051,10 @@ async function processRefundTicket(refundData, userId, companyId) {
           discounts: sale.couponDiscount,
           total: sale.finalTotal
         },
-        payment: { method: paymentMethods[sale.payment.method] },
+        payment: { method: paymentMethods[sale.payment.method], details: {
+          cashReceived: sale.payment.cashAmount, cashAmount: sale.payment.cashAmount,
+          cardAmount: sale.payment.cardAmount, change: 0
+        } },
         notes: refundData.reason.trim()
       }], { session });
     });

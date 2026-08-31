@@ -47,6 +47,7 @@ const mySchema = new Schema({
     type: String,
     required: true
   },
+  requestFingerprint: String,
   
   products: {
     type: [productSnapshotSchema],

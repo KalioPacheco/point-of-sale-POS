@@ -24,6 +24,27 @@ const { createHttpAccess } = require('../middleware/httpAccess');
 const productStore = require('../components/products/store');
 const cutStore = require('../components/cashRegisterCuts/store');
 const movementStore = require('../components/cashMovements/store');
+const ticketStore = require('../components/ticket/store');
+const PDFDocument = require('pdfkit');
+const { PassThrough } = require('stream');
+const fs = require('fs');
+const path = require('path');
+
+async function capturePdf(generate, filename) {
+  const output = new PassThrough();
+  output.setHeader = () => {};
+  const chunks = [];
+  output.on('data', chunk => chunks.push(chunk));
+  const finished = new Promise((resolve, reject) => { output.on('end', resolve); output.on('error', reject); });
+  await generate(output);
+  await finished;
+  const buffer = Buffer.concat(chunks);
+  assert.equal(buffer.subarray(0, 5).toString(), '%PDF-');
+  if (process.env.QA_PDF_DIR) {
+    fs.mkdirSync(process.env.QA_PDF_DIR, { recursive: true });
+    fs.writeFileSync(path.join(process.env.QA_PDF_DIR, filename), buffer);
+  }
+}
 
 async function cutFixture() {
   const f = await createFixture();
@@ -159,6 +180,151 @@ async function api(path, { token, method = 'GET', body, headers = {} } = {}) {
     : await response.text();
   return { status: response.status, data };
 }
+
+test('checkout HTTP replay binds payload and cashier and survives a closed shift', async () => {
+  const f = await createFixture();
+  const body = httpSalePayload(f, { products: [{ productId: f.product._id, quantity: 2 }] });
+  const options = { token: tokenFor(f.cashier), method: 'POST', body,
+    headers: { 'Idempotency-Key': 'bound-checkout' } };
+  const results = await Promise.all([api('/sales', options), api('/sales/with-coupon', options)]);
+  assert.deepEqual(results.map(r => r.status), [201, 201]);
+  assert.equal(results[0].data.body.saleId, results[1].data.body.saleId);
+  assert.equal(await Sale.countDocuments({ company: f.company._id }), 1);
+  assert.equal((await Product.findById(f.product._id)).stock, 3);
+  for (const path of ['/sales', '/sales/with-coupon']) {
+    const changed = await api(path, { ...options, body: { ...body, couponCode: null } });
+    assert.equal(changed.status, 409);
+    const other = await User.create({ userName: `other-replay-${path.includes('coupon')}-${Date.now()}`,
+      password: 'e2e-password', role: 'vendedor', company: f.company._id });
+    const forbidden = await api(path, { ...options, token: tokenFor(other) });
+    assert.equal(forbidden.status, 404);
+    assert.equal(forbidden.data.body, '');
+  }
+  await CashRegisterShift.updateOne({ _id: f.shift._id }, { status: 'closed' });
+  assert.equal((await api('/sales', options)).status, 201);
+  // Existing snapshots support legitimate retries of pre-fingerprint sales.
+  await Sale.updateOne({ _id: results[0].data.body.saleId }, { $unset: { requestFingerprint: 1 } });
+  assert.equal((await api('/sales', options)).status, 201);
+  assert.equal((await api('/sales', { ...options, body: { ...body, couponCode: null } })).status, 409);
+  await Sale.updateOne({ _id: results[0].data.body.saleId }, { status: 'refunded', refund: true });
+  assert.equal((await api('/sales', options)).status, 409);
+});
+
+test('manual cash HTTP binds open owned shift and reconciles income and expenses', async () => {
+  const { f, data } = await cutFixture();
+  await CashRegisterShift.updateOne({ _id: f.shift._id }, { openingCash: 100 });
+  const options = { token: tokenFor(f.cashier), method: 'POST', body: {
+    type: 'initial_cash', amount: 10, concept: 'QA entry',
+    cashRegister: f.shift.cashRegister, shiftId: f.shift._id
+  } };
+  assert.equal((await api('/cash-movements/create', options)).status, 200);
+  assert.equal((await api('/cash-movements/create', { ...options,
+    body: { ...options.body, type: 'expense', amount: 5 } })).status, 200);
+  assert.equal((await api('/cash-movements/create', { ...options,
+    body: { ...options.body, shiftId: undefined } })).status, 422);
+  const other = await User.create({ userName: `movement-other-${Date.now()}`, password: 'e2e-password',
+    company: f.company._id, role: 'manager' });
+  assert.equal((await api('/cash-movements/create', { ...options, token: tokenFor(other) })).status, 404);
+  assert.equal((await api('/cash-movements/create', { ...options,
+    body: { ...options.body, cashRegister: 'WRONG' } })).status, 404);
+  const foreignShift = await CashRegisterShift.create({ company: f.otherCompany._id,
+    cashier: f.cashier._id, cashRegister: f.shift.cashRegister, openingCash: 0 });
+  assert.equal((await api('/cash-movements/create', { ...options,
+    body: { ...options.body, shiftId: foreignShift._id } })).status, 404);
+  // Global operations remain explicit and outside shift reconciliation.
+  assert.equal((await api('/cash-movements/create', { ...options,
+    body: { type: 'expense', amount: 1, concept: 'Global' } })).status, 200);
+  const cut = await cutStore.createCashRegisterCut({ ...data, actualCash: 105 });
+  assert.equal(cut.cut.cashControl.expectedCash, 105);
+  assert.equal(cut.cut.cashControl.difference, 0);
+  assert.equal((await api('/cash-movements/create', options)).status, 404);
+  assert.equal(await CashMovement.countDocuments({ shift: f.shift._id }), 2);
+});
+
+test('shift ledger paginates the same scope and reconciles four payment methods and refunds', async () => {
+  const { f, data } = await cutFixture();
+  const payments = [
+    { method: 'cash', cashReceived: 200 }, { method: 'card', reference: 'CARD' },
+    { method: 'transfer', reference: 'TRANSFER' },
+    { method: 'mixed', cashAmount: 50, cardAmount: 66, reference: 'MIXED' }
+  ];
+  let cashSale;
+  for (const payment of payments) {
+    const sale = await salesController.addSell(salePayload(f, { products: [{ productId: f.product._id, quantity: 1 }],
+      couponCode: null, payment }), `ledger-${payment.method}`);
+    if (payment.method === 'cash') cashSale = sale;
+  }
+  const refund = await api('/tickets/process-refund', { token: tokenFor(f.cashier), method: 'POST', body: {
+    originalSaleId: cashSale._id, reason: 'QA ledger', shiftId: f.shift._id, cashRegister: f.shift.cashRegister
+  } });
+  assert.equal(refund.status, 200);
+  for (const [type, amount] of [['initial_cash', 10], ['expense', 5]]) {
+    await movementStore.createMovement({ type, amount, concept: 'QA ledger manual', userId: f.cashier._id,
+      companyId: f.company._id, cashRegister: f.shift.cashRegister, shiftId: f.shift._id });
+  }
+  await movementStore.createMovement({ type: 'initial_cash', amount: 900, concept: 'Global excluded',
+    userId: f.cashier._id, companyId: f.company._id });
+  const endpoint = `/cash-movements/shift/${f.shift._id}`;
+  const ledger = await api(`${endpoint}?limit=2`, { token: tokenFor(f.cashier) });
+  assert.equal(ledger.status, 200);
+  assert.equal(ledger.data.body.total, 7);
+  assert.equal(ledger.data.body.movements.length, 2);
+  assert.deepEqual(ledger.data.body.summary, { shiftId: String(f.shift._id),
+    openingCash: 500, income: 176, expenses: 121, expectedCash: 555 });
+  const second = await api(`${endpoint}?page=1&limit=2`, { token: tokenFor(f.cashier) });
+  assert.deepEqual(second.data.body.summary, ledger.data.body.summary);
+  assert.ok(second.data.body.movements.every(m => String(m.shift) === String(f.shift._id)));
+  assert.ok(second.data.body.movements.every(m => !ledger.data.body.movements.some(first => first._id === m._id)));
+  f.cashier.role = 'vendedor';
+  await f.cashier.save();
+  assert.equal((await api(endpoint, { token: tokenFor(f.cashier) })).status, 200);
+  const other = await User.create({ userName: `ledger-other-${Date.now()}`, password: 'e2e-password',
+    company: f.company._id, role: 'vendedor' });
+  assert.equal((await api(endpoint, { token: tokenFor(other) })).status, 404);
+  other.company = f.otherCompany._id;
+  other.role = 'admin';
+  await other.save();
+  assert.equal((await api(endpoint, { token: tokenFor(other) })).status, 404);
+  assert.equal((await api(`${endpoint}?limit=1000`, { token: tokenFor(f.cashier) })).status, 422);
+  f.cashier.role = 'manager';
+  await f.cashier.save();
+  const cut = await cutStore.createCashRegisterCut({ ...data, actualCash: 555 });
+  assert.equal(cut.cut.cashControl.expectedCash, ledger.data.body.summary.expectedCash);
+  const printed = [];
+  const originalText = PDFDocument.prototype.text;
+  PDFDocument.prototype.text = function captureText(value, ...args) {
+    printed.push(String(value));
+    return originalText.call(this, value, ...args);
+  };
+  try {
+    await capturePdf(res => cutStore.generateCutPDFDirect(cut.cut._id, res), 'cut-fixed.pdf');
+  } finally { PDFDocument.prototype.text = originalText; }
+  assert.ok(printed.includes('POS E2E Store'));
+  assert.ok(printed.some(line => line.startsWith('Transferencia: ventas $116.00')));
+  assert.ok(printed.includes('Mixto / efectivo neto: $50.00'));
+  assert.ok(printed.includes('Mixto / tarjeta neta: $66.00'));
+  assert.ok(printed.includes('Devoluciones: $116.00'));
+  assert.ok(printed.includes('Total neto: $348.00'));
+  const refundTicket = await Ticket.findOne({ saleId: cashSale._id, ticketType: 'refund' });
+  const refundData = await ticketStore.generateTicketData(refundTicket._id);
+  assert.equal(refundData.cashier, 'E2E Cashier');
+  assert.equal(refundData.storeName, 'POS E2E Store');
+});
+
+test('receipts preserve cashier identity and render both supported widths', async () => {
+  const f = await createFixture();
+  const sale = await salesController.addSell(salePayload(f), 'pdf-checkout');
+  const ticket = await Ticket.findOne({ saleId: sale._id, ticketType: 'sale' });
+  assert.equal(ticket.transactionInfo.cashier.name, 'E2E Cashier');
+  assert.equal(ticket.transactionInfo.customer.name, f.customer.name);
+  await User.updateOne({ _id: f.cashier._id }, { name: 'Changed name' });
+  assert.equal((await ticketStore.generateTicketData(ticket._id)).cashier, 'E2E Cashier');
+  for (const width of ['58mm', '80mm']) {
+    await capturePdf(res => ticketStore.generateTicketPDF(ticket._id, width, res), `ticket-fixed-${width}.pdf`);
+  }
+  await Ticket.updateOne({ _id: ticket._id }, { $unset: { 'transactionInfo.cashier.name': 1 } });
+  assert.equal((await ticketStore.generateTicketData(ticket._id)).cashier, 'Changed name');
+});
 
 test('manual stock adjustments serialize concurrent increments and retries', async () => {
   const f = await createFixture();
@@ -385,6 +551,8 @@ test('logout revokes the access token and a fresh login restores access', async 
     body: { userName: fixture.cashier.userName, password: 'e2e-password' }
   });
   assert.equal(login.status, 200);
+  assert.equal(login.data.user.companyName, fixture.company.name);
+  assert.equal(login.data.user.company, String(fixture.company._id));
   assert.equal(login.data.session.refreshSupported, false);
   assert.equal(jwt.decode(login.data.token).tokenVersion, 1);
   assert.equal((await api('/products', { token: login.data.token })).status, 200);
