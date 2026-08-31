@@ -155,6 +155,9 @@ const validateCashMovementCreate = [
   body('concept').isString().trim().notEmpty().withMessage('Concepto requerido'),
   body('description').optional().isString(),
   body('cashRegister').optional().isString().trim(),
+  body('shiftId').optional().isMongoId().withMessage('Turno invalido'),
+  body('shiftId').custom((value, { req }) => Boolean(value) === Boolean(req.body.cashRegister))
+    .withMessage('Los movimientos de caja requieren turno; los globales omiten caja y turno'),
   ...forbiddenTenantFields,
   handleValidationErrors
 ];

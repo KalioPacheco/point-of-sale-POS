@@ -15,7 +15,7 @@ const handleSaleError = (req, res, err) => {
     err?.code === 'INSUFFICIENT_STOCK'
     || /stock insuficiente|insufficient stock/i.test(message);
 
-  response.error(req, res, message, isStockConflict ? 409 : 500, err);
+  response.error(req, res, message, err.status || (isStockConflict ? 409 : 500), err);
 };
 
 
@@ -43,7 +43,7 @@ const addSell = function addSell(req, res) {
       }, 201);
     })
     .catch(err => {
-      response.error(req, res, err.message, 400, err);
+      handleSaleError(req, res, err);
     });
 };
 
