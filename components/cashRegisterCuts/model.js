@@ -6,6 +6,7 @@ const { Schema } = mongoose;
 const cashRegisterCutSchema = new Schema({
   cutNumber: { type: String, required: true },
   cashRegister: { type: String, required: true },
+  companyName: String,
   
   cashier: { type: Schema.ObjectId, ref: 'Users', required: true },
   administrator: { type: Schema.ObjectId, ref: 'Users', required: true },
@@ -164,7 +165,7 @@ this.cashControl.totalMovements = totalMovements;
   let totalRefunds = 0;
   
   sales.forEach(sale => {
-    const amount = sale.finalTotal || sale.total || 0;
+    const amount = sale.finalTotal ?? sale.total ?? 0;
     const method = ['cash', 'card', 'transfer', 'mixed'].includes(sale.payment?.method)
       ? sale.payment.method
       : 'cash';
@@ -182,7 +183,7 @@ this.cashControl.totalMovements = totalMovements;
   });
 
   refunds.forEach(sale => {
-    const amount = sale.finalTotal || sale.total || 0;
+    const amount = sale.finalTotal ?? sale.total ?? 0;
     const method = ['cash', 'card', 'transfer', 'mixed'].includes(sale.payment?.method)
       ? sale.payment.method
       : 'cash';

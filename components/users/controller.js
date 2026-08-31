@@ -41,6 +41,7 @@ function buildAuthResponse(user, company) {
       lastNames: user.lastNames,
       typeUser: user.typeUser,
       company: company?._id || user.company || null,
+      companyName: company?.name || null,
       photo: user.photo,
       role: user.role
     }

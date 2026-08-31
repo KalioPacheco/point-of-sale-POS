@@ -2,6 +2,9 @@ const Model = require('./model');
 const Shift = require('../cashRegisterShifts/model');
 
 async function createMovement(movementData) {
+  if (Boolean(movementData.cashRegister) !== Boolean(movementData.shiftId)) {
+    throw new Error('Cash register and shift are required together');
+  }
   const session = await Model.db.startSession();
   let savedMovement;
   try {
@@ -9,7 +12,7 @@ async function createMovement(movementData) {
       if (movementData.shiftId) {
         const shift = await Shift.findOneAndUpdate({
           _id: movementData.shiftId, company: movementData.companyId,
-          cashRegister: movementData.cashRegister, status: 'open'
+          cashRegister: movementData.cashRegister, cashier: movementData.userId, status: 'open'
         }, { $inc: { operationRevision: 1 } }, { new: true, session });
         if (!shift) throw new Error('Open shift not found for cash movement');
       }

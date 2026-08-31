@@ -1,4 +1,6 @@
 const express = require('express');
+const { param, query } = require('express-validator');
+const { getShiftLedger } = require('./shiftLedger');
 const response = require('../../network');
 const controller = require('./controller');
 const Helper = require('../../helpers');
@@ -6,7 +8,7 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
-const { validateCashMovementCreate, validateCashMovementUpdate } = require('../../middleware/validation');
+const { validateCashMovementCreate, validateCashMovementUpdate, handleValidationErrors } = require('../../middleware/validation');
 const Movement = require('./model');
 const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
 
@@ -29,6 +31,15 @@ router.post('/create', authenticateToken, requireRole(['admin', 'manager']), val
   };
   handleRequest(req, res, controller.createMovement(movementData));
 });
+
+router.get('/shift/:shiftId', requireRole(['admin', 'manager', 'vendedor']),
+  param('shiftId').isMongoId(), query('page').optional().isInt({ min: 0 }).toInt(),
+  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(), handleValidationErrors,
+  (req, res) => handleRequest(req, res, getShiftLedger({
+    shiftId: req.params.shiftId, companyId: req.companyId,
+    userId: Helper.getUserId(req), role: req.user.role,
+    page: req.query.page, limit: req.query.limit
+  })));
 
 
 router.get('/summary/daily/:date', authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
