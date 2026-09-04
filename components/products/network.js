@@ -45,6 +45,8 @@ const listProducts = function listProducts(req, res) {
   const { q, category, disable, ids } = req.query;
 
   const filters = {
+    page: req.query.page, limit: req.query.limit,
+    paginated: req.query.paginated === 'true', brand: req.query.brand,
     q: typeof q === 'string' ? q : undefined,
     category: typeof category === 'string' ? category : undefined,
     disable: disable === 'true' ? true : disable === 'false' ? false : undefined,

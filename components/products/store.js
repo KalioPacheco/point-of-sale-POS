@@ -1,3 +1,4 @@
+const { pageOptions } = require('../../helpers/query');
 const mongoose = require('mongoose');
 const { Product: Model, StockHistory } = require('./model');
 const { adjustStock } = require('./stockAdjustment');
@@ -55,6 +56,8 @@ async function listProducts(productId, companyId, filters = {}) {
     const queryOr = [
       { name: searchRegex },
       { code: searchRegex },
+      { description: searchRegex },
+      { 'variants.sku': searchRegex },
       { codigo: searchRegex },
     ];
 
@@ -65,13 +68,20 @@ async function listProducts(productId, companyId, filters = {}) {
     filter.$or = queryOr;
   }
 
+  if (filters.brand && mongoose.Types.ObjectId.isValid(filters.brand)) filter.brand = filters.brand;
+  if (filters.ids?.length > 100) throw new Error('Invalid ids: maximum 100');
+  const { page, limit, skip } = pageOptions(filters);
   const products = await Model.find(filter)
     .populate('brand')
-    .populate('company')
-    .populate('createdBy')
+
     .populate('categories')
+    .sort({ name: 1, _id: 1 })
+    .skip(filters.ids ? 0 : skip)
+    .limit(filters.ids ? 100 : limit)
+    .lean()
     .exec();
     
+  if (filters.paginated) return { items: products, total: await Model.countDocuments(filter), page, limit };
   return products;
 }
 

@@ -476,6 +476,7 @@ test.before(async () => {
   await mongoose.connection.syncIndexes();
 
   const app = express();
+  app.use((req, _res, next) => { req.id = require('node:crypto').randomUUID(); next(); });
   app.use(createHttpAccess('http://localhost:5173'));
   app.use(express.json());
   app.use(passport.initialize());
@@ -949,4 +950,121 @@ test('seller requests closing, manager approves cut and closed shift rejects che
   });
   assert.equal(rejectedCheckout.status, 400);
   assert.match(JSON.stringify(rejectedCheckout.data), /No open shift/i);
+});
+
+
+test('M-09 HTTP persists campaign dates and rejects future, expired and inverted coupons', async () => {
+  const { f } = await cutFixture();
+  const token = tokenFor(f.cashier);
+  const validFrom = new Date(Date.now() + 3600000).toISOString();
+  const expirationDate = new Date(Date.now() + 86400000).toISOString();
+  const created = await api('/coupons', { token, method: 'POST', body: {
+    code: `FUTURE-${fixtureSequence}`, name: 'Future campaign', discountType: 'fixed_amount', discountValue: 150, validFrom, expirationDate
+  } });
+  assert.equal(created.status, 201);
+  assert.equal(created.data.body.validFrom, validFrom);
+  const id = created.data.body._id;
+  const reloaded = await api(`/coupons/${id}`, { token });
+  assert.equal(reloaded.data.body.validFrom, validFrom);
+  const payload = httpSalePayload(f, { couponCode: created.data.body.code });
+  const preview = await api('/sales/preview-with-coupon', { token, method: 'POST', body: payload });
+  assert.ok(preview.status >= 400);
+  const checkout = await api('/sales', { token, method: 'POST', body: payload, headers: { 'Idempotency-Key': 'future-rejected' } });
+  assert.ok(checkout.status >= 400);
+  assert.equal(await Sale.countDocuments({ company: f.company._id }), 0);
+  const invalid = await api(`/coupons/${id}`, { token, method: 'PUT', body: { validFrom: new Date(Date.now() + 172800000).toISOString() } });
+  assert.equal(invalid.status, 400);
+  const start = new Date(Date.now() - 3600000).toISOString();
+  const updated = await api(`/coupons/${id}`, { token, method: 'PUT', body: { validFrom: start } });
+  assert.equal(updated.status, 200); assert.equal(updated.data.body.validFrom, start);
+  assert.equal((await api('/sales/preview-with-coupon', { token, method: 'POST', body: payload })).status, 200);
+  await Coupon.updateOne({ _id: id }, { expirationDate: new Date(Date.now() - 1) });
+  assert.ok((await api('/sales/preview-with-coupon', { token, method: 'POST', body: payload })).status >= 400);
+});
+
+test('M-11 cut totals include all 65 cuts, UTC boundaries and tenant/user filters across pages', async () => {
+  const { f } = await cutFixture();
+  const token = tokenFor(f.cashier);
+  const base = { company: f.company._id, cashier: f.cashier._id, administrator: f.cashier._id,
+    cashRegister: 'RANGE', disable: false, salesSummary: { netSales: 10 }, cashControl: { difference: 2 } };
+  const docs = Array.from({ length: 65 }, (_, i) => ({ ...base, shift: new mongoose.Types.ObjectId(), cutNumber: `RANGE-${i}`,
+    cutDate: new Date(i === 0 ? '2026-08-01T00:00:00.000Z' : i === 64 ? '2026-08-01T23:59:59.999Z' : '2026-08-01T12:00:00Z') }));
+  docs.push({ ...base, shift: new mongoose.Types.ObjectId(), cutNumber: 'OUTSIDE', cutDate: new Date('2026-08-02T00:00:00Z') });
+  docs.push({ ...base, company: f.otherCompany._id, shift: new mongoose.Types.ObjectId(), cutNumber: 'OTHER', cutDate: new Date('2026-08-01T12:00:00Z') });
+  await CashRegisterCut.collection.insertMany(docs);
+  const query = 'startDate=2026-08-01&endDate=2026-08-01';
+  const first = await api(`/cashregistercuts/reports/general?${query}&page=1&limit=50`, { token });
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.deepEqual(first.data.body.summary, { totalCuts: 65, totalSales: 650, totalDifferences: 130 });
+  assert.equal(first.data.body.cuts.length, 50);
+  const second = await api(`/cashregistercuts/reports/general?${query}&page=2&limit=50`, { token });
+  assert.equal(second.data.body.cuts.length, 15);
+  assert.deepEqual(second.data.body.summary, first.data.body.summary);
+  assert.equal(new Set([...first.data.body.cuts, ...second.data.body.cuts].map(c => c._id)).size, 65);
+  const byUser = await cutStore.getUserCashRegisterReport(f.cashier._id, '2026-08-01', '2026-08-01', f.company._id);
+  assert.equal(byUser.summary.totalCuts, 65);
+  assert.equal((await cutStore.getCashRegisterReport('RANGE', '2026-08-01', '2026-08-01', f.company._id)).summary.totalCuts, 65);
+  for (const invalid of ['startDate=bad', 'startDate=2026-08-02&endDate=2026-08-01', 'date=2026-02-30', 'limit=101']) {
+    assert.equal((await api(`/cashregistercuts/reports/general?${invalid}`, { token })).status, 400);
+  }
+});
+
+test('M-04 catalog pagination, cart IDs and sales summary stay complete with large fixtures', async () => {
+  const { f } = await cutFixture();
+  const token = tokenFor(f.cashier);
+  const brand = new mongoose.Types.ObjectId();
+  const category = new mongoose.Types.ObjectId();
+  const products = Array.from({ length: 1000 }, (_, i) => ({ name: `Paged ${String(i).padStart(4, '0')}`, code: `PAGED-${i}`,
+    company: f.company._id, disable: false, price: 10, stock: 10, brand, categories: [category] }));
+  await Product.collection.insertMany(products);
+  const query = `paginated=true&q=Paged&brand=${brand}&category=${category}&limit=25`;
+  const first = await api(`/products?${query}&page=1`, { token });
+  const second = await api(`/products?${query}&page=2`, { token });
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(first.data.body.total, 1000); assert.equal(second.data.body.total, 1000);
+  assert.equal(first.data.body.items.length, 25);
+  assert.equal(new Set([...first.data.body.items, ...second.data.body.items].map(p => p._id)).size, 50);
+  const ids = second.data.body.items.map(p => p._id).join(',');
+  assert.equal((await api(`/products?ids=${ids}`, { token })).data.body.length, 25);
+  assert.equal((await api('/products?limit=101', { token })).status, 400);
+  const sale = { company: f.company._id, createdBy: f.cashier._id, disable: false, status: 'confirmed',
+    createdAt: new Date('2026-08-01T12:00:00Z'), finalTotal: 10, subtotal: 10,
+    products: [{ productId: f.product._id, quantity: 1, total: 10, priceSnapshot: { name: 'Paged item', price: 10 } }] };
+  const sales = Array.from({ length: 60 }, (_, i) => ({ ...sale, idempotencyKey: `paged-sale-${i}` }));
+  sales[0].refundInfo = { refundedAt: new Date('2026-08-02T12:00:00Z') };
+  await Sale.collection.insertMany(sales);
+  const report = await api('/sales/reports?paginated=true&startDate=2026-08-01&endDate=2026-08-02&limit=25&page=2', { token });
+  assert.equal(report.status, 200, JSON.stringify(report.data));
+  assert.equal(report.data.body.items.length, 25); assert.equal(report.data.body.total, 61);
+  assert.equal(report.data.body.summary.totalVentas, 60); assert.equal(report.data.body.summary.totalDevoluciones, 1);
+  assert.equal(report.data.body.summary.totalIngresos, 590); assert.equal(report.data.body.summary.promedioVenta, 10);
+  assert.equal(report.data.body.topProducts[0].cantidad, 59);
+  const samples = [];
+  let bytes = 0;
+  for (let i = 0; i < 20; i++) {
+    const start = performance.now(); const result = await api(`/products?${query}&page=20`, { token });
+    samples.push(performance.now() - start); bytes = Buffer.byteLength(JSON.stringify(result.data));
+  }
+  samples.sort((a, z) => a - z);
+  console.log(`M-04 fixture: 1000 products, 60 sales + refund; catalog page 25 p95=${samples[18].toFixed(2)}ms response=${bytes} bytes (20 sequential local HTTP samples)`);
+});
+
+test('M-05 tax routes retain success and normalize not-found/conflict/internal errors with request IDs', async () => {
+  const { f } = await cutFixture();
+  f.cashier.role = 'admin'; await f.cashier.save();
+  const token = tokenFor(f.cashier);
+  const controller = require('../components/taxes/controller');
+  const original = controller.listTaxConfigs;
+  try {
+    for (const [error, status, code] of [
+      [new Error('Tax configuration not found'), 404, 'RESOURCE_NOT_FOUND'],
+      [Object.assign(new Error('duplicate key'), { code: 11000 }), 409, 'DUPLICATE_RESOURCE'],
+      [new Error('private database host and credentials'), 500, 'INTERNAL_ERROR']
+    ]) {
+      controller.listTaxConfigs = async () => { throw error; };
+      const result = await api(`/taxes/config/${f.company._id}`, { token });
+      assert.equal(result.status, status); assert.equal(result.data.code, code); assert.ok(result.data.requestId);
+      if (status === 500) assert.equal(result.data.message, 'Internal server error');
+    }
+  } finally { controller.listTaxConfigs = original; }
 });

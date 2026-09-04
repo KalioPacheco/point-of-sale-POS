@@ -51,6 +51,7 @@ const couponSchema = new Schema({
     required: true,
     min: 0
   },
+  validFrom: { type: Date },
   expirationDate: {
     type: Date,
     required: true
@@ -124,6 +125,7 @@ couponSchema.statics.findValidCoupon = async function findValidCoupon(code, comp
     company: companyId,
     disable: false,
     status: 'active',
+    $or: [{ validFrom: { $lte: now } }, { validFrom: { $exists: false } }],
     expirationDate: { $gte: now }
   });
   if (session) query.session(session);
@@ -137,6 +139,8 @@ couponSchema.methods.isValidForSale = function isValidForSale(saleData, customer
   if (this.disable || this.status !== 'active') {
     errors.push('El cupón no está activo');
   }
+
+  if (this.validFrom && now < this.validFrom) errors.push('El cupón aún no está vigente');
 
   if (now > this.expirationDate) {
     errors.push('El cupón ha expirado');
@@ -221,6 +225,13 @@ couponSchema.methods.recordUsage = async function recordUsage(saleData, customer
   
   return await this.save();
 };
+
+couponSchema.pre('validate', function(next) {
+  if (this.validFrom && this.expirationDate && this.validFrom > this.expirationDate) {
+    this.invalidate('validFrom', 'Fecha inicial debe ser anterior o igual al fin');
+  }
+  next();
+});
 
 couponSchema.pre('save', function(next) {
   if (new Date() > this.expirationDate && this.status === 'active') {
