@@ -65,6 +65,8 @@ const cashRegisterCutSchema = new Schema({
 cashRegisterCutSchema.index({ company: 1, cutNumber: 1 }, { unique: true });
 cashRegisterCutSchema.index({ company: 1, shift: 1 }, { unique: true });
 
+cashRegisterCutSchema.index({ company: 1, disable: 1, cutDate: -1, _id: -1 });
+
 cashRegisterCutSchema.statics.generateCutNumber = async function generateCutNumber(
   cashRegister,
   company,

@@ -139,7 +139,7 @@ async function getProductWithTaxes(productId, companyId) {
       taxInfo: taxCalculation
     };
   } catch (error) {
-    return Promise.reject(new Error(`Error getting product with taxes: ${error.message}`));
+    return Promise.reject(error);
   }
 }
 
@@ -161,7 +161,7 @@ async function bulkSetProductTaxes(productIds, taxConfigId, customRate, companyI
     const results = await Promise.all(promises);
     return results;
   } catch (error) {
-    return Promise.reject(new Error(`Error in bulk set product taxes: ${error.message}`));
+    return Promise.reject(error);
   }
 }
 

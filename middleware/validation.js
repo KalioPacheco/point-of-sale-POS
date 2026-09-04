@@ -130,6 +130,7 @@ const couponFields = optional => [
     }
     return true;
   }),
+  body('validFrom').optional().isISO8601().withMessage('Fecha inicial invalida'),
   body('expirationDate')[optional ? 'optional' : 'exists']().isISO8601().withMessage('Fecha de expiracion invalida'),
   body('minimumPurchase').optional().isFloat({ min: 0 }),
   body('status').optional().isIn(['active', 'inactive', 'expired']),

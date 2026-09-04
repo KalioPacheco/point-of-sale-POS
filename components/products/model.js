@@ -198,6 +198,7 @@ productSchema.methods.getTaxAmount = function getTaxAmount() {
   return ((this.price || 0) * this.taxRate) / 100;
 };
 
+productSchema.index({ company: 1, disable: 1, name: 1, _id: 1 });
 const model = mongoose.model('Products', productSchema, 'products');
 module.exports = {
   Product: model,
