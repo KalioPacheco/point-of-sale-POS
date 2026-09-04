@@ -1,3 +1,5 @@
+const mongoose = require('mongoose');
+const { pageOptions, dateRange } = require('../../helpers/query');
 const PDFDocument = require('pdfkit');
 const Model = require('./model');
 const UsersModel = require('../users/model');
@@ -75,31 +77,44 @@ async function createCashRegisterCut(cutData) {
   return result;
 }
 
-async function getCashRegisterCuts(filters = {}) {
-  const query = { disable: false };
-
+function cutQuery(filters) {
+  if (!mongoose.Types.ObjectId.isValid(filters.companyId)) throw new Error('Company required');
+  const query = { disable: false, company: new mongoose.Types.ObjectId(filters.companyId) };
   if (filters.cashRegister) query.cashRegister = filters.cashRegister;
-  if (filters.cashierId) query.cashier = filters.cashierId;
-  if (filters.date) {
-    const startDate = new Date(filters.date);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(filters.date);
-    endDate.setHours(23, 59, 59, 999);
-    query.cutDate = { $gte: startDate, $lte: endDate };
+  if (filters.cashierId) {
+    if (!mongoose.Types.ObjectId.isValid(filters.cashierId)) throw new Error('Invalid cashier ID');
+    query.cashier = new mongoose.Types.ObjectId(filters.cashierId);
   }
-  if (filters.companyId && filters.companyId !== 'default-company-id') {
-    query.company = filters.companyId;
-  }
+  const range = dateRange(filters);
+  if (range) query.cutDate = range;
+  return query;
+}
 
-  
+async function generateCashRegisterReport(filters = {}) {
+  const { page, limit, skip } = pageOptions(filters);
+  const [result] = await Model.aggregate([
+    { $match: cutQuery(filters) },
+    { $sort: { cutDate: -1, _id: -1 } },
+    { $facet: {
+      cuts: [{ $skip: skip }, { $limit: limit }],
+      summary: [{ $group: {
+        _id: null, totalCuts: { $sum: 1 },
+        totalSales: { $sum: '$salesSummary.netSales' },
+        totalDifferences: { $sum: '$cashControl.difference' }
+      } }]
+    } }
+  ]);
+  const summary = result.summary[0] || { totalCuts: 0, totalSales: 0, totalDifferences: 0 };
+  delete summary._id;
+  const cuts = await Model.populate(result.cuts, [
+    { path: 'cashier', select: 'userName name' },
+    { path: 'administrator', select: 'userName name' }
+  ]);
+  return { summary, cuts, count: cuts.length, total: summary.totalCuts, page, limit, filters };
+}
 
-  const cuts = await Model.find(query)
-    .populate('cashier', 'userName name')
-    .populate('administrator', 'userName name')
-    .sort({ cutDate: -1 })
-    .limit(filters.limit || 50);
-
-  return { cuts, count: cuts.length, filters };
+async function getCashRegisterCuts(filters = {}) {
+  return generateCashRegisterReport(filters);
 }
 
 async function getCashRegisterCutById(cutId) {
@@ -185,17 +200,6 @@ async function generateCutPDFDirect(cutId, res) {
   doc.fontSize(8).text(`Generado: ${new Date().toLocaleString('es-MX')}`);
 
   doc.end();
-}
-
-async function generateCashRegisterReport(filters = {}) {
-  const { cuts } = await getCashRegisterCuts(filters);
-  const summary = cuts.reduce((acc, cut) => ({
-    totalCuts: acc.totalCuts + 1,
-    totalSales: acc.totalSales + (cut.salesSummary.netSales || 0),
-    totalDifferences: acc.totalDifferences + (cut.cashControl.difference || 0)
-  }), { totalCuts: 0, totalSales: 0, totalDifferences: 0 });
-
-  return { summary, cuts, filters };
 }
 
 module.exports = {

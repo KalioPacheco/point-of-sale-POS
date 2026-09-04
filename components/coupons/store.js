@@ -98,6 +98,9 @@ async function update(id, couponData) {
       }
     }
 
+    const start = couponData.validFrom ?? existingCoupon.validFrom;
+    const end = couponData.expirationDate ?? existingCoupon.expirationDate;
+    if (start && new Date(start) > new Date(end)) throw new Error('Fecha inicial invalida: posterior al fin');
     const updatedCouponData = { ...couponData, updatedAt: new Date() };
     
     const updatedCoupon = await Model.findByIdAndUpdate(
@@ -161,6 +164,7 @@ async function getActiveCoupons(companyId) {
       company: companyId,
       disable: false,
       status: 'active',
+      $or: [{ validFrom: { $lte: now } }, { validFrom: { $exists: false } }],
       expirationDate: { $gte: now }
     })
       .select('code name description discountType discountValue minimumPurchase applicationMethods')
@@ -181,6 +185,7 @@ async function getCouponsForCashier(companyId) {
       company: companyId,
       disable: false,
       status: 'active',
+      $or: [{ validFrom: { $lte: now } }, { validFrom: { $exists: false } }],
       expirationDate: { $gte: now },
       'applicationMethods.cashierSelection': true
     })

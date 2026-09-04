@@ -52,7 +52,7 @@ const listSales = function listSales(req, res) {
   const companyId = Helper.getCompanyId(req);
   const cashierId = req.user.role === 'vendedor' ? Helper.getUserId(req) : undefined;
   controller
-    .listSales(sellId, companyId, cashierId)
+    .listSales(sellId, companyId, cashierId, { ...req.query, paginated: req.query.paginated === 'true' })
     .then(data => {
       response.success(req, res, data, 200);
     })
@@ -63,15 +63,15 @@ const listSales = function listSales(req, res) {
 
 const listSaleOperationsForReports = function listSaleOperationsForReports(req, res) {
   const filters = {
+    page: req.query.page, limit: req.query.limit,
     startDate: req.query.startDate,
     endDate: req.query.endDate,
     cashRegister: req.query.cashRegister,
     cashierId: req.query.cashierId,
     companyId: Helper.getCompanyId(req)
   };
-  controller
-    .listSaleOperationsForReports(filters)
-    .then(data => response.success(req, res, data, 200))
+  require('./reportPage')(filters)
+    .then(data => response.success(req, res, req.query.paginated === 'true' ? data : data.items, 200))
     .catch(err => response.error(req, res, 'Internal error', 500, err));
 };
 

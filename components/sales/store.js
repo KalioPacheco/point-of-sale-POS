@@ -1,3 +1,4 @@
+const { pageOptions } = require('../../helpers/query');
 const mongoose = require('mongoose');
 const Model = require('./model');
 
@@ -22,7 +23,7 @@ function addSell(sell, session = null) {
   return newSales.save(session ? { session } : undefined);
 }
 
-async function listSales(sellId, companyId, cashierId) {
+async function listSales(sellId, companyId, cashierId, filters = {}) {
   const filter = {};
   
   if (sellId) {
@@ -39,11 +40,14 @@ async function listSales(sellId, companyId, cashierId) {
   if (cashierId) filter.createdBy = cashierId;
 
 
+  const { page, limit, skip } = pageOptions(filters);
   const sales = await Model.find(filter)
     .populate('createdBy')
-    .populate('company')
+    .populate('company', 'name')
+    .sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit).lean()
     .exec();
     
+  if (filters.paginated) return { items: sales, total: await Model.countDocuments(filter), page, limit };
   return sales;
 }
 
@@ -286,5 +290,6 @@ module.exports = {
   getSalesSummaryWithHistoricalData, 
   migrateOldSalesToHistoricalFormat ,
   findByIdempotencyKey,
-  listSaleOperationsForReports
+  listSaleOperationsForReports,
+  pageSaleOperations: require('./reportPage')
 };

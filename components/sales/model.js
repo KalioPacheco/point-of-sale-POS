@@ -233,5 +233,7 @@ mySchema.methods.calculateTaxes = function calculateTaxes(productsList, couponDa
   };
 };
 
+mySchema.index({ company: 1, disable: 1, createdAt: -1, _id: -1 });
+mySchema.index({ company: 1, disable: 1, 'refundInfo.refundedAt': -1 });
 const model = mongoose.model('Sales', mySchema, 'sales');
 module.exports = model;
