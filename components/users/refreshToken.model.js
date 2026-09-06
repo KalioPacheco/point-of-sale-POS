@@ -10,7 +10,7 @@ const refreshTokenSchema = new Schema({
   tokenHash: { type: String, required: true, unique: true, index: true },
   familyId: { type: String, required: true, index: true },
   user: { type: Schema.ObjectId, ref: 'Users', required: true, index: true },
-  expiresAt: { type: Date, required: true, index: true },
+  expiresAt: { type: Date, required: true },
   revokedAt: Date,
   revokedReason: String,
   replacedBy: { type: Schema.ObjectId, ref: 'RefreshTokens' },
