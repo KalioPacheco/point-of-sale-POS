@@ -12,6 +12,7 @@ const salesController = require('../components/sales/controller');
 const Company = require('../components/companies/model');
 const User = require('../components/users/model');
 const Customer = require('../components/customer/model');
+const Supplier = require('../components/suppliers/model');
 const { Product, StockHistory } = require('../components/products/model');
 const Coupon = require('../components/coupons/model');
 const CashRegisterShift = require('../components/cashRegisterShifts/model');
@@ -498,6 +499,106 @@ test.after(async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
   }
+});
+
+test('inventory receipts, approvals, counts and reorder stay tenant scoped and auditable', async () => {
+  const fixture = await createFixture();
+  fixture.cashier.role = 'manager';
+  await fixture.cashier.save();
+  const token = tokenFor(fixture.cashier);
+
+  const supplierResponse = await api('/suppliers', {
+    token,
+    method: 'POST',
+    body: { name: `Proveedor E2E ${fixtureSequence}`, taxId: 'AAA010101AAA', contactName: 'Compras' },
+  });
+  assert.equal(supplierResponse.status, 201);
+  const supplier = supplierResponse.data.body;
+
+  const receiptPayload = {
+    supplierId: supplier._id,
+    reference: `FAC-${process.pid}-${fixtureSequence}`,
+    items: [{ productId: fixture.product._id, quantity: 4, unitCost: 80 }],
+    notes: 'Recepción completa de prueba',
+  };
+  const receiptRequest = {
+    token,
+    method: 'POST',
+    body: receiptPayload,
+    headers: { 'Idempotency-Key': `receipt-${process.pid}-${fixtureSequence}` },
+  };
+  const receipt = await api('/inventory/receipts', receiptRequest);
+  assert.equal(receipt.status, 201);
+  assert.equal(receipt.data.body.receipt.status, 'pending');
+  const replay = await api('/inventory/receipts', receiptRequest);
+  assert.equal(replay.status, 200);
+  assert.equal(replay.data.body.replayed, true);
+  assert.equal(await require('../components/inventory/model').PurchaseReceipt.countDocuments({ company: fixture.company._id }), 1);
+
+  const approved = await api(`/inventory/receipts/${receipt.data.body.receipt._id}/approve`, {
+    token,
+    method: 'POST',
+    body: { approvalNote: 'Factura verificada' },
+  });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.data.body.status, 'approved');
+  const receivedProduct = await Product.findById(fixture.product._id);
+  assert.equal(receivedProduct.stock, 9);
+  assert.equal(receivedProduct.cost, 63.3333);
+  const receiptHistory = await StockHistory.findOne({ product: fixture.product._id, type: 'receipt' });
+  assert.equal(String(receiptHistory.approvedBy), String(fixture.cashier._id));
+  assert.equal((await api(`/inventory/receipts/${receipt.data.body.receipt._id}/approve`, {
+    token, method: 'POST', body: {}
+  })).status, 409);
+
+  await Product.updateOne({ _id: fixture.product._id }, { $set: { reorderPoint: 10, reorderQuantity: 12 } });
+  const reorder = await api('/inventory/reorder', { token });
+  assert.equal(reorder.status, 200);
+  assert.equal(reorder.data.body[0].suggestedQuantity, 12);
+
+  fixture.cashier.role = 'vendedor';
+  await fixture.cashier.save();
+  const cashierToken = tokenFor(fixture.cashier);
+  const adjustment = await api('/inventory/adjustments', {
+    token: cashierToken,
+    method: 'POST',
+    body: { productId: fixture.product._id, type: 'decrease', quantity: 2, reason: 'Merma registrada' },
+  });
+  assert.equal(adjustment.status, 201);
+  assert.equal((await Product.findById(fixture.product._id)).stock, 9);
+  fixture.cashier.role = 'manager';
+  await fixture.cashier.save();
+  const managerToken = tokenFor(fixture.cashier);
+  assert.equal((await api(`/inventory/adjustments/${adjustment.data.body._id}/approve`, {
+    token: managerToken, method: 'POST', body: { approvalNote: 'Merma aprobada' }
+  })).status, 200);
+  assert.equal((await Product.findById(fixture.product._id)).stock, 7);
+
+  const count = await api('/inventory/counts', {
+    token: cashierToken,
+    method: 'POST',
+    body: {
+      reference: `CONTEO-${process.pid}-${fixtureSequence}`,
+      items: [{ productId: fixture.product._id, countedQuantity: 6 }],
+    },
+  });
+  assert.equal(count.status, 201);
+  assert.equal((await api(`/inventory/counts/${count.data.body._id}/approve`, {
+    token: managerToken, method: 'POST', body: {}
+  })).status, 200);
+  assert.equal((await Product.findById(fixture.product._id)).stock, 6);
+  assert.equal(await StockHistory.countDocuments({ product: fixture.product._id, type: 'physical_count' }), 1);
+
+  const otherSupplier = await Supplier.create({
+    company: fixture.otherCompany._id,
+    name: `Proveedor externo ${fixtureSequence}`,
+    createdBy: fixture.cashier._id,
+  });
+  assert.equal((await api('/inventory/receipts', {
+    token: managerToken,
+    method: 'POST',
+    body: { ...receiptPayload, supplierId: otherSupplier._id, reference: `${receiptPayload.reference}-externa` },
+  })).status, 404);
 });
 
 test('checkout is atomic, authoritative and idempotent', async () => {
