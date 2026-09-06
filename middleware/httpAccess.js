@@ -20,7 +20,11 @@ function createHttpAccess(configuredOrigins = process.env.CORS_ORIGINS) {
     // Vary even on denied/no-origin responses so caches cannot mix CORS decisions.
     res.vary('Origin');
     const origin = req.headers.origin;
-    if (origin && allowedOrigins.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
+    req.trustedOrigin = Boolean(origin && allowedOrigins.has(origin));
+    if (req.trustedOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
     res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Idempotency-Key, X-Request-Id');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');

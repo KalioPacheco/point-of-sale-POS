@@ -12,6 +12,7 @@ const {
 } = require('../../middleware/validation');
 const router = express.Router();
 const { loginRateLimit } = require('../../middleware/rateLimit');
+const { clearRefreshCookie } = require('./session');
 
 const addUser = function (req, res) {
   const user = req.body;
@@ -36,6 +37,7 @@ const logout = function (req, res) {
   controller
     .logout(req)
     .then(data => {
+      clearRefreshCookie(res);
       response.success(req, res, data, 200);
     })
     .catch(err => {
@@ -97,6 +99,7 @@ router.get('/', authenticateToken, requireRole(['admin']), listUsers);
 router.get('/:userId', authenticateToken, requireRole(['admin']), listUsers);
 router.post('/', authenticateToken, requireRole(['admin']), validateUserCreate, addUser);
 router.post('/login', loginRateLimit, controller.login);
+router.post('/refresh', controller.refresh);
 router.post('/register', authenticateToken, requireRole(['admin']), validateUserCreate, controller.register);
 router.post('/logout', authenticateToken, logout);
 router.patch('/:userId', authenticateToken, requireRole(['admin']), validateUserUpdate, updateUser);

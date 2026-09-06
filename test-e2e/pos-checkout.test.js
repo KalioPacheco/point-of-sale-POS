@@ -554,7 +554,7 @@ test('logout revokes the access token and a fresh login restores access', async 
   assert.equal(login.status, 200);
   assert.equal(login.data.user.companyName, fixture.company.name);
   assert.equal(login.data.user.company, String(fixture.company._id));
-  assert.equal(login.data.session.refreshSupported, false);
+  assert.equal(login.data.session.refreshSupported, true);
   assert.equal(jwt.decode(login.data.token).tokenVersion, 1);
   assert.equal((await api('/products', { token: login.data.token })).status, 200);
 });

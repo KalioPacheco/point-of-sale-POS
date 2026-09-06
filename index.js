@@ -11,6 +11,14 @@ const { createHttpAccess } = require('./middleware/httpAccess');
 
 const app = express();
 
+// Configure the exact number of trusted reverse proxies in production. Do
+// not trust forwarded headers by default, otherwise a client can choose its
+// own rate-limit IP through X-Forwarded-For.
+const trustedProxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
+if (Number.isInteger(trustedProxyHops) && trustedProxyHops > 0) {
+  app.set('trust proxy', trustedProxyHops);
+}
+
 app.use((req, res, next) => {
   req.id = req.headers['x-request-id'] || randomUUID();
   res.setHeader('X-Request-Id', req.id);
