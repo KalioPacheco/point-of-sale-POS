@@ -12,6 +12,8 @@ const tickets = require('../components/ticket/network');
 const taxes = require('../components/taxes/network');
 const coupons = require('../components/coupons/network');
 const cashRegisterShifts = require('../components/cashRegisterShifts/network');
+const suppliers = require('../components/suppliers/network');
+const inventory = require('../components/inventory/network');
 const response = require('../network');
 
 const routes = function routes(server) {
@@ -30,6 +32,8 @@ const routes = function routes(server) {
   server.use('/taxes', taxes);
   server.use('/coupons', coupons);
   server.use('/cash-register-shifts', cashRegisterShifts);
+  server.use('/suppliers', suppliers);
+  server.use('/inventory', inventory);
 
   server.use((err, req, res, _next) => {
     console.error('Error:', err);

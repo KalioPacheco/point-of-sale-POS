@@ -117,6 +117,8 @@ async function updateProduct(productId, product, companyId = null) {
     , disable
     , taxRate
     , taxExempt
+    , reorderPoint
+    , reorderQuantity
   } = product;
 
   if (code) {
@@ -171,6 +173,8 @@ async function updateProduct(productId, product, companyId = null) {
   if (typeof disable === 'boolean') founProduct.disable = disable;
   if (taxRate !== undefined) founProduct.taxRate = taxRate;
   if (typeof taxExempt === 'boolean') founProduct.taxExempt = taxExempt;
+  if (reorderPoint !== undefined) founProduct.reorderPoint = reorderPoint;
+  if (reorderQuantity !== undefined) founProduct.reorderQuantity = reorderQuantity;
 
   founProduct.updated = true;
   founProduct.updatedAt = new Date();
