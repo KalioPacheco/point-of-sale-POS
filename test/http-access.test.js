@@ -31,6 +31,7 @@ test('HTTP access permits exact first-party origins without weakening authentica
       } });
       assert.equal(res.status, 200);
       assert.equal(res.headers.get('access-control-allow-origin'), PUBLIC_POS_ORIGIN);
+      assert.equal(res.headers.get('access-control-allow-credentials'), 'true');
       assert.match(res.headers.get('access-control-allow-headers').toLowerCase(), /idempotency-key/);
       assert.match(res.headers.get('access-control-allow-methods'), /POST/);
     });

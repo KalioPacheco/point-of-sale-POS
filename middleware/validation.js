@@ -40,6 +40,8 @@ const productFields = optional => [
   body('price')[optional ? 'optional' : 'exists']().isFloat({ min: 0 }).withMessage('Precio invalido'),
   body('cost').optional().isFloat({ min: 0 }).withMessage('Costo invalido'),
   body('stock').optional().isFloat({ min: 0 }).withMessage('Stock invalido'),
+  body('reorderPoint').optional().isFloat({ min: 0 }).withMessage('Punto de reorden invalido'),
+  body('reorderQuantity').optional().isFloat({ min: 0 }).withMessage('Cantidad de reorden invalida'),
   body('categories')[optional ? 'optional' : 'exists']().isArray().withMessage('Las categorias deben ser un arreglo'),
   body('categories.*').optional().isMongoId().withMessage('Categoria invalida'),
   body('brand').optional({ nullable: true }).isMongoId().withMessage('Marca invalida'),
@@ -130,6 +132,7 @@ const couponFields = optional => [
     }
     return true;
   }),
+  body('validFrom').optional().isISO8601().withMessage('Fecha inicial invalida'),
   body('expirationDate')[optional ? 'optional' : 'exists']().isISO8601().withMessage('Fecha de expiracion invalida'),
   body('minimumPurchase').optional().isFloat({ min: 0 }),
   body('status').optional().isIn(['active', 'inactive', 'expired']),
@@ -182,6 +185,58 @@ const validateCashRegisterCut = [
   handleValidationErrors
 ];
 
+const supplierFields = optional => [
+  body('name')[optional ? 'optional' : 'exists']().isString().trim().notEmpty().withMessage('Nombre de proveedor requerido'),
+  body('taxId').optional().isString().trim(),
+  body('contactName').optional().isString().trim(),
+  body('email').optional({ checkFalsy: true }).isEmail().withMessage('Email invalido'),
+  body('phone').optional().isString().trim(),
+  body('address').optional().isString().trim(),
+  body('notes').optional().isString().isLength({ max: 2000 }),
+  body('disable').optional().isBoolean(),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
+const validatePurchaseReceiptCreate = [
+  body('supplierId').isMongoId().withMessage('Proveedor invalido'),
+  body('reference').isString().trim().notEmpty().isLength({ max: 120 }).withMessage('Referencia requerida'),
+  body('receivedAt').optional().isISO8601().withMessage('Fecha de recepción invalida'),
+  body('notes').optional().isString().isLength({ max: 2000 }),
+  body('items').isArray({ min: 1 }).withMessage('Productos de recepción requeridos'),
+  body('items.*.productId').isMongoId().withMessage('Producto invalido'),
+  body('items.*.quantity').isFloat({ gt: 0 }).withMessage('Cantidad debe ser mayor a cero'),
+  body('items.*.unitCost').isFloat({ min: 0 }).withMessage('Costo unitario invalido'),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
+const validatePhysicalCountCreate = [
+  body('reference').isString().trim().notEmpty().isLength({ max: 120 }).withMessage('Referencia de conteo requerida'),
+  body('countedAt').optional().isISO8601().withMessage('Fecha de conteo invalida'),
+  body('notes').optional().isString().isLength({ max: 2000 }),
+  body('items').isArray({ min: 1 }).withMessage('Productos de conteo requeridos'),
+  body('items.*.productId').isMongoId().withMessage('Producto invalido'),
+  body('items.*.countedQuantity').isFloat({ min: 0 }).withMessage('Cantidad contada invalida'),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
+const validateInventoryAdjustmentCreate = [
+  body('productId').isMongoId().withMessage('Producto invalido'),
+  body('type').isIn(['increase', 'decrease', 'set']).withMessage('Tipo de ajuste invalido'),
+  body('quantity').isFloat({ min: 0 }).withMessage('Cantidad invalida'),
+  body('reason').isString().trim().notEmpty().isLength({ max: 1000 }).withMessage('Motivo requerido'),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
+const validateInventoryApproval = [
+  body('approvalNote').optional().isString().isLength({ max: 1000 }),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
 module.exports = {
   validateBrandCreate: namedCreate('Nombre de marca'),
   validateBrandUpdate: namedUpdate,
@@ -205,5 +260,11 @@ module.exports = {
   validateCashMovementCreate,
   validateCashMovementUpdate,
   validateCashRegisterCut,
+  validateSupplierCreate: supplierFields(false),
+  validateSupplierUpdate: supplierFields(true),
+  validatePurchaseReceiptCreate,
+  validatePhysicalCountCreate,
+  validateInventoryAdjustmentCreate,
+  validateInventoryApproval,
   handleValidationErrors
 };

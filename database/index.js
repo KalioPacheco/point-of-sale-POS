@@ -1,22 +1,6 @@
-const db = require('mongoose');
-
-db.Promise = global.Promise;
+const mongoose = require('mongoose');
 
 async function connect() {
-  const url = process.env.DB_CONECTION_DEV ;
-  await db.connect(
-    url,
-    {
-      useNewUrlParser: true,
-    },
-    error => {
-      if (error) {
-        console.log(error);
-      } else {
-        console.log('[db] Conectada con éxito');
-      }
-    },
-  );
+  await mongoose.connect(process.env.DB_CONECTION_DEV, { serverSelectionTimeoutMS: 5000, connectTimeoutMS: 5000 });
 }
-
 module.exports = connect;

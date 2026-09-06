@@ -58,7 +58,7 @@ const stockHistorySchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['add', 'reduce', 'set'],
+    enum: ['add', 'reduce', 'set', 'receipt', 'adjustment', 'physical_count'],
     required: true,
   },
   quantity: {
@@ -74,6 +74,17 @@ const stockHistorySchema = new mongoose.Schema({
   reason: {
     type: String,
     default: 'Manual adjustment',
+  },
+  sourceType: {
+    type: String,
+    enum: ['purchase_receipt', 'inventory_adjustment', 'physical_count'],
+  },
+  sourceId: {
+    type: mongoose.Schema.ObjectId,
+  },
+  approvedBy: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'Users',
   },
   createdAt: {
     type: Date,
@@ -92,6 +103,8 @@ const productSchema = new Schema({
   sku: { type: String, trim: true },
   price: Number,
   cost: { type: Number, default: 0, min: 0 },
+  reorderPoint: { type: Number, default: 0, min: 0 },
+  reorderQuantity: { type: Number, default: 0, min: 0 },
   folio: {
     type: Number,
     default: 1,
@@ -198,6 +211,7 @@ productSchema.methods.getTaxAmount = function getTaxAmount() {
   return ((this.price || 0) * this.taxRate) / 100;
 };
 
+productSchema.index({ company: 1, disable: 1, name: 1, _id: 1 });
 const model = mongoose.model('Products', productSchema, 'products');
 module.exports = {
   Product: model,

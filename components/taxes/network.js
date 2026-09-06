@@ -25,13 +25,7 @@ const sendResponse = {
       body: data
     });
   },
-  error: (req, res, message, status = 400) => {
-    res.status(status).json({
-      error: true,
-      status,
-      body: message
-    });
-  }
+  error: require('../../network').error
 };
 
 router.post('/config', validateTaxCreate, authenticateToken, requireRole(['admin']), async (req, res) => {
@@ -45,7 +39,7 @@ router.post('/config', validateTaxCreate, authenticateToken, requireRole(['admin
     const result = await controller.addTaxConfig(taxData);
     sendResponse.success(req, res, result, 201);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -59,7 +53,7 @@ router.get('/config/:companyId', authenticateToken, requireRole(['admin']), requ
     const result = await controller.listTaxConfigs(companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -70,7 +64,7 @@ router.get('/config/detail/:taxConfigId', authenticateToken, requireRole(['admin
     const result = await controller.getTaxConfig(taxConfigId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -81,7 +75,7 @@ router.put('/config/:taxConfigId', validateTaxUpdate, authenticateToken, require
     const result = await controller.updateTaxConfig(taxConfigId, req.body, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -92,7 +86,7 @@ router.delete('/config/:taxConfigId', authenticateToken, requireRole(['admin']),
     const result = await controller.removeTaxConfig(taxConfigId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -106,7 +100,7 @@ router.post('/product', authenticateToken, requireTenant, requireRole(['admin'])
     const result = await controller.setProductTax(productId, taxConfigId, customRate, companyId, userId);
     sendResponse.success(req, res, result, 201);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -119,7 +113,7 @@ router.post('/product/bulk', authenticateToken, requireTenant, requireRole(['adm
     const result = await controller.bulkSetProductTaxes(productIds, taxConfigId, customRate, companyId, userId);
     sendResponse.success(req, res, result, 201);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -133,7 +127,7 @@ router.get('/product/:productId/:companyId', authenticateToken, requireRole(['ad
     const result = await controller.getProductTaxes(productId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -147,7 +141,7 @@ router.get('/product/detail/:productId/:companyId', authenticateToken, requireRo
     const result = await controller.getProductWithTaxes(productId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -161,7 +155,7 @@ router.delete('/product/:productId/:taxConfigId/:companyId', authenticateToken, 
     const result = await controller.removeProductTax(productId, taxConfigId, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -173,7 +167,7 @@ router.post('/calculate/product', authenticateToken, requireTenant, requireRole(
     const result = await controller.calculateProductTaxes(productId, basePrice, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
@@ -184,7 +178,7 @@ router.post('/calculate/sale', authenticateToken, requireTenant, requireRole(['a
     const result = await controller.calculateSaleTaxes(products, companyId);
     sendResponse.success(req, res, result);
   } catch (error) {
-    sendResponse.error(req, res, error.message, 400);
+    sendResponse.error(req, res, error.message, 500, error);
   }
 });
 
