@@ -6,6 +6,8 @@ const UsersModel = require('../users/model');
 const Company = require('../companies/model');
 const CashRegisterShift = require('../cashRegisterShifts/model');
 
+const roundMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
 
 async function createCashRegisterCut(cutData) {
   const session = await Model.db.startSession();
@@ -55,13 +57,26 @@ async function createCashRegisterCut(cutData) {
         shiftStart: shift.openedAt, shiftEnd: shift.closedAt || new Date(),
         salesSummary: new Model().salesSummary.toObject(),
         cashControl: { expectedCash: 0, actualCash, difference: 0, initialCash: shift.openingCash },
+        differenceApproval: { status: 'not_required' },
         notes: cutData.notes ?? cut.notes, company: cutData.companyId, status: 'closed'
       });
       await cut.calculateTaxes(session);
       cut.cashControl.expectedCash = cut.salesSummary.cash.net +
         cut.salesSummary.mixed.cashNet + shift.openingCash +
         (cut.cashControl.totalMovements || 0);
-      cut.cashControl.difference = actualCash - cut.cashControl.expectedCash;
+      cut.cashControl.difference = roundMoney(actualCash - cut.cashControl.expectedCash);
+      if (cut.cashControl.difference !== 0) {
+        const reason = cutData.differenceReason?.trim();
+        if (!reason) {
+          throw new Error('A difference reason is required to approve a cash cut with a variance');
+        }
+        cut.differenceApproval = {
+          status: 'approved',
+          reason,
+          reviewedBy: cutData.administratorId,
+          reviewedAt: new Date()
+        };
+      }
       await cut.save({ session });
       shift.status = 'closed';
       shift.closingCash = actualCash;
@@ -108,7 +123,8 @@ async function generateCashRegisterReport(filters = {}) {
   delete summary._id;
   const cuts = await Model.populate(result.cuts, [
     { path: 'cashier', select: 'userName name' },
-    { path: 'administrator', select: 'userName name' }
+    { path: 'administrator', select: 'userName name' },
+    { path: 'differenceApproval.reviewedBy', select: 'userName name' }
   ]);
   return { summary, cuts, count: cuts.length, total: summary.totalCuts, page, limit, filters };
 }
@@ -120,7 +136,8 @@ async function getCashRegisterCuts(filters = {}) {
 async function getCashRegisterCutById(cutId) {
   const cut = await Model.findById(cutId)
     .populate('cashier', 'userName name')
-    .populate('administrator', 'userName name');
+    .populate('administrator', 'userName name')
+    .populate('differenceApproval.reviewedBy', 'userName name');
   if (!cut) throw new Error('Cut not found');
   return cut;
 }

@@ -53,7 +53,8 @@ async function cutFixture() {
   await f.cashier.save();
   return { f, data: {
     shiftId: f.shift._id, companyId: f.company._id,
-    cashRegister: f.shift.cashRegister, administratorId: f.cashier._id, actualCash: 500
+    cashRegister: f.shift.cashRegister, administratorId: f.cashier._id, actualCash: 500,
+    differenceReason: 'Diferencia de prueba autorizada'
   } };
 }
 
@@ -240,6 +241,61 @@ test('manual cash HTTP binds open owned shift and reconciles income and expenses
   assert.equal(cut.cut.cashControl.difference, 0);
   assert.equal((await api('/cash-movements/create', options)).status, 404);
   assert.equal(await CashMovement.countDocuments({ shift: f.shift._id }), 2);
+});
+
+test('cashier cash requests require an independent approval and only then affect the ledger', async () => {
+  const fixture = await createFixture();
+  const manager = await User.create({
+    userName: `movement-manager-${process.pid}-${fixtureSequence}`,
+    password: 'e2e-password', role: 'manager', company: fixture.company._id
+  });
+  const requestOptions = {
+    token: tokenFor(fixture.cashier), method: 'POST', body: {
+      type: 'income', amount: 20, concept: 'Cambio adicional',
+      cashRegister: fixture.shift.cashRegister, shiftId: fixture.shift._id
+    }
+  };
+  const requested = await api('/cash-movements/request', requestOptions);
+  assert.equal(requested.status, 200);
+  assert.equal(requested.data.body.approvalStatus, 'pending');
+  assert.equal(requested.data.body.authorized, false);
+
+  const ledgerPath = `/cash-movements/shift/${fixture.shift._id}`;
+  const beforeApproval = await api(ledgerPath, { token: tokenFor(fixture.cashier) });
+  assert.equal(beforeApproval.status, 200);
+  assert.equal(beforeApproval.data.body.total, 0);
+  assert.equal(beforeApproval.data.body.summary.expectedCash, 500);
+
+  const pending = await api('/cash-movements/pending', { token: tokenFor(manager) });
+  assert.equal(pending.status, 200);
+  assert.equal(pending.data.body.length, 1);
+  assert.equal(String(pending.data.body[0]._id), String(requested.data.body._id));
+  assert.equal((await api(`/cash-movements/${requested.data.body._id}/approve`, {
+    token: tokenFor(fixture.cashier), method: 'POST', body: {}
+  })).status, 403);
+
+  const approved = await api(`/cash-movements/${requested.data.body._id}/approve`, {
+    token: tokenFor(manager), method: 'POST', body: { approvalNote: 'Autorizado por cambio' }
+  });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.data.body.approvalStatus, 'approved');
+  assert.equal(String(approved.data.body.authorizedBy._id), String(manager._id));
+
+  const afterApproval = await api(ledgerPath, { token: tokenFor(fixture.cashier) });
+  assert.equal(afterApproval.data.body.total, 1);
+  assert.equal(afterApproval.data.body.summary.expectedCash, 520);
+
+  const withdrawal = await api('/cash-movements/request', {
+    ...requestOptions,
+    body: { ...requestOptions.body, type: 'withdrawal', amount: 8, concept: 'Depósito bancario' }
+  });
+  const rejected = await api(`/cash-movements/${withdrawal.data.body._id}/reject`, {
+    token: tokenFor(manager), method: 'POST', body: { approvalNote: 'Se requiere comprobante' }
+  });
+  assert.equal(rejected.status, 200);
+  assert.equal(rejected.data.body.approvalStatus, 'rejected');
+  const afterRejection = await api(ledgerPath, { token: tokenFor(fixture.cashier) });
+  assert.equal(afterRejection.data.body.summary.expectedCash, 520);
 });
 
 test('shift ledger paginates the same scope and reconciles four payment methods and refunds', async () => {
@@ -1051,6 +1107,39 @@ test('seller requests closing, manager approves cut and closed shift rejects che
   });
   assert.equal(rejectedCheckout.status, 400);
   assert.match(JSON.stringify(rejectedCheckout.data), /No open shift/i);
+});
+
+test('cash cut variance is recorded with the manager approval and explanation', async () => {
+  const fixture = await createFixture();
+  const manager = await User.create({
+    userName: `variance-manager-${process.pid}-${fixtureSequence}`,
+    password: 'e2e-password', role: 'manager', company: fixture.company._id
+  });
+  const closeRequest = await api(`/cash-register-shifts/${fixture.shift._id}/close`, {
+    method: 'POST', token: tokenFor(fixture.cashier), body: { closingCash: 490 }
+  });
+  assert.equal(closeRequest.status, 200);
+
+  const withoutReason = await api('/cashregistercuts/create', {
+    method: 'POST', token: tokenFor(manager), body: {
+      cashRegister: fixture.shift.cashRegister, shiftId: fixture.shift._id
+    }
+  });
+  assert.equal(withoutReason.status, 400);
+  assert.match(withoutReason.data.message, /difference reason/i);
+
+  const approved = await api('/cashregistercuts/create', {
+    method: 'POST', token: tokenFor(manager), body: {
+      cashRegister: fixture.shift.cashRegister,
+      shiftId: fixture.shift._id,
+      differenceReason: 'Faltante reportado durante el arqueo'
+    }
+  });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.data.body.cut.cashControl.difference, -10);
+  assert.equal(approved.data.body.cut.differenceApproval.status, 'approved');
+  assert.equal(approved.data.body.cut.differenceApproval.reason, 'Faltante reportado durante el arqueo');
+  assert.equal(String(approved.data.body.cut.differenceApproval.reviewedBy), String(manager._id));
 });
 
 

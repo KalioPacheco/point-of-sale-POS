@@ -33,6 +33,41 @@ module.exports = {
     return store.createMovement(movementData);
   },
 
+  requestMovement(movementData) {
+    movementData.type = normalizeCashMovementType(movementData.type);
+    validateMovementData(movementData);
+    if (!['income', 'withdrawal'].includes(movementData.type)) {
+      throw new Error('Only cash income and withdrawal requests are allowed');
+    }
+    if (!movementData.shiftId || !movementData.cashRegister) {
+      throw new Error('An open shift is required for a cash movement request');
+    }
+    return store.requestMovement(movementData);
+  },
+
+  approveRequestedMovement(movementId, companyId, approverId, note) {
+    if (!movementId || !companyId || !approverId) {
+      throw new Error('Movement and approver are required');
+    }
+    return store.decideRequestedMovement(movementId, {
+      companyId, approverId, note, approved: true
+    });
+  },
+
+  rejectRequestedMovement(movementId, companyId, approverId, note) {
+    if (!movementId || !companyId || !approverId) {
+      throw new Error('Movement and approver are required');
+    }
+    if (!note?.trim()) throw new Error('A reason is required to reject a cash movement request');
+    return store.decideRequestedMovement(movementId, {
+      companyId, approverId, note: note.trim(), approved: false
+    });
+  },
+
+  getPendingMovements(filters) {
+    return store.getPendingMovements(filters);
+  },
+
   getMovements(filters) {
     if (filters) validateFilters(filters);
     return store.getMovements(filters);

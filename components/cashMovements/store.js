@@ -1,6 +1,14 @@
 const Model = require('./model');
 const Shift = require('../cashRegisterShifts/model');
 
+const settledApproval = { $nin: ['pending', 'rejected'] };
+
+const populateMovement = movement => Model.findById(movement.id || movement._id)
+  .populate('user', 'name lastNames userName')
+  .populate('company', 'name')
+  .populate('saleReference')
+  .populate('authorizedBy', 'name lastNames userName');
+
 async function createMovement(movementData) {
   if (Boolean(movementData.cashRegister) !== Boolean(movementData.shiftId)) {
     throw new Error('Cash register and shift are required together');
@@ -22,6 +30,7 @@ async function createMovement(movementData) {
         session
       );
     
+      const approvalStatus = movementData.approvalStatus || 'approved';
       const movement = new Model({
         movementNumber,
         type: movementData.type,
@@ -35,17 +44,18 @@ async function createMovement(movementData) {
         saleReference: movementData.saleReference,
         shift: movementData.shiftId,
         receiptNumber: movementData.receiptNumber,
-        authorized: movementData.authorized !== undefined ? movementData.authorized : true,
-        authorizedBy: movementData.authorizedBy,
+        authorized: approvalStatus === 'approved',
+        authorizedBy: approvalStatus === 'approved'
+          ? movementData.authorizedBy || movementData.userId
+          : undefined,
+        approvalStatus,
+        approvalRequestedAt: movementData.approvalRequestedAt || new Date(),
         notes: movementData.notes
       });
 
       savedMovement = await movement.save({ session });
     });
-    return await Model.findById(savedMovement.id)
-      .populate('user', 'name lastNames userName')
-      .populate('company', 'name')
-      .populate('saleReference');
+    return await populateMovement(savedMovement);
   } catch (error) {
     throw new Error(`Error creating movement: ${error.message}`);
   } finally {
@@ -53,9 +63,74 @@ async function createMovement(movementData) {
   }
 }
 
+function forbidden(message) {
+  const error = new Error(`Forbidden: ${message}`);
+  error.code = 'FORBIDDEN';
+  return error;
+}
+
+function conflict(message) {
+  const error = new Error(message);
+  error.code = 'CONFLICT';
+  return error;
+}
+
+async function requestMovement(movementData) {
+  return createMovement({ ...movementData, approvalStatus: 'pending' });
+}
+
+async function decideRequestedMovement(movementId, decision) {
+  const session = await Model.db.startSession();
+  let movement;
+  try {
+    await session.withTransaction(async () => {
+      movement = await Model.findOne({
+        _id: movementId,
+        company: decision.companyId,
+        disable: false,
+        approvalStatus: 'pending'
+      }).session(session);
+      if (!movement) throw conflict('Pending cash movement not found');
+      if (String(movement.user) === String(decision.approverId)) {
+        throw forbidden('A requester cannot approve or reject their own cash movement');
+      }
+
+      if (decision.approved) {
+        const shift = await Shift.findOneAndUpdate({
+          _id: movement.shift,
+          company: decision.companyId,
+          cashRegister: movement.cashRegister,
+          status: 'open'
+        }, { $inc: { operationRevision: 1 } }, { new: true, session });
+        if (!shift) throw conflict('The shift is closed; the cash movement cannot be approved');
+      }
+
+      movement.approvalStatus = decision.approved ? 'approved' : 'rejected';
+      movement.authorized = Boolean(decision.approved);
+      movement.authorizedBy = decision.approverId;
+      movement.approvalDecidedAt = new Date();
+      movement.approvalNote = decision.note;
+      await movement.save({ session });
+    });
+    return await populateMovement(movement);
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function getPendingMovements({ companyId, userId, role }) {
+  const query = { company: companyId, disable: false, approvalStatus: 'pending' };
+  if (role === 'vendedor') query.user = userId;
+  return Model.find(query)
+    .populate('user', 'name lastNames userName')
+    .populate('authorizedBy', 'name lastNames userName')
+    .sort({ approvalRequestedAt: 1, _id: 1 })
+    .limit(100);
+}
+
 async function getMovements(filters = {}) {
   try {
-    const query = { disable: false };
+    const query = { disable: false, approvalStatus: settledApproval };
     
     
     if (filters.companyId && filters.companyId !== 'default-company-id') {
@@ -116,7 +191,7 @@ async function getMovementById(movementId) {
 
 async function updateMovement(movementId, updateData) {
   try {
-    const allowedUpdates = ['concept', 'description', 'notes', 'authorized', 'authorizedBy'];
+    const allowedUpdates = ['notes'];
     const filteredData = {};
     
     allowedUpdates.forEach(field => {
@@ -146,14 +221,14 @@ async function updateMovement(movementId, updateData) {
 
 async function deleteMovement(movementId) {
   try {
-    const movement = await Model.findByIdAndUpdate(
-      movementId,
+    const movement = await Model.findOneAndUpdate(
+      { _id: movementId, approvalStatus: 'pending' },
       { disable: true, updatedAt: new Date() },
       { new: true }
     );
 
     if (!movement) {
-      throw new Error('Movement not found');
+      throw new Error('Only pending cash movement requests can be cancelled');
     }
 
     return movement;
@@ -170,6 +245,7 @@ async function getDailySummary(date, companyId) {
 
     const query = {
       disable: false,
+      approvalStatus: settledApproval,
       createdAt: { $gte: startOfDay, $lte: endOfDay }
     };
 
@@ -232,6 +308,7 @@ async function getUserMovements(userId, filters = {}) {
   try {
     const query = { 
       disable: false, 
+      approvalStatus: settledApproval,
       user: userId 
     };
     if (filters.companyId) query.company = filters.companyId;
@@ -257,6 +334,7 @@ async function getCashRegisterMovements(cashRegister, filters = {}) {
   try {
     const query = { 
       disable: false, 
+      approvalStatus: settledApproval,
       // eslint-disable-next-line object-shorthand
       cashRegister: cashRegister 
     };
@@ -284,6 +362,7 @@ async function getMovementsByDateRange(startDate, endDate, companyId) {
   try {
     const query = {
       disable: false,
+      approvalStatus: settledApproval,
       createdAt: {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
@@ -308,6 +387,9 @@ async function getMovementsByDateRange(startDate, endDate, companyId) {
 
 module.exports = {
   createMovement,
+  requestMovement,
+  decideRequestedMovement,
+  getPendingMovements,
   getMovements,
   getMovementById,
   updateMovement,
