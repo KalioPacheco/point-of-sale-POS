@@ -8,7 +8,13 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
-const { validateCashMovementCreate, validateCashMovementUpdate, handleValidationErrors } = require('../../middleware/validation');
+const {
+  validateCashMovementCreate,
+  validateCashMovementRequest,
+  validateCashMovementDecision,
+  validateCashMovementUpdate,
+  handleValidationErrors
+} = require('../../middleware/validation');
 const Movement = require('./model');
 const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
 
@@ -27,10 +33,42 @@ router.post('/create', authenticateToken, requireRole(['admin', 'manager']), val
   const movementData = {
     ...req.body,
     userId: Helper.getUserId(req),
-    companyId: Helper.getCompanyId(req) !== 'default-company-id' ? Helper.getCompanyId(req) : undefined
+    companyId: Helper.getCompanyId(req) !== 'default-company-id' ? Helper.getCompanyId(req) : undefined,
+    authorizedBy: Helper.getUserId(req)
   };
   handleRequest(req, res, controller.createMovement(movementData));
 });
+
+router.post('/request', requireRole(['admin', 'manager', 'vendedor']), validateCashMovementRequest, (req, res) => {
+  const movementData = {
+    ...req.body,
+    userId: Helper.getUserId(req),
+    companyId: req.companyId
+  };
+  handleRequest(req, res, controller.requestMovement(movementData));
+});
+
+router.get('/pending', requireRole(['admin', 'manager', 'vendedor']), (req, res) => {
+  handleRequest(req, res, controller.getPendingMovements({
+    companyId: req.companyId,
+    userId: Helper.getUserId(req),
+    role: req.user.role
+  }));
+});
+
+router.post('/:movementId/approve', requireRole(['admin', 'manager']), scopeMovement,
+  validateCashMovementDecision, (req, res) => {
+    handleRequest(req, res, controller.approveRequestedMovement(
+      req.params.movementId, req.companyId, Helper.getUserId(req), req.body.approvalNote
+    ));
+  });
+
+router.post('/:movementId/reject', requireRole(['admin', 'manager']), scopeMovement,
+  validateCashMovementDecision, (req, res) => {
+    handleRequest(req, res, controller.rejectRequestedMovement(
+      req.params.movementId, req.companyId, Helper.getUserId(req), req.body.approvalNote
+    ));
+  });
 
 router.get('/shift/:shiftId', requireRole(['admin', 'manager', 'vendedor']),
   param('shiftId').isMongoId(), query('page').optional().isInt({ min: 0 }).toInt(),

@@ -3,6 +3,8 @@ const { Counter, counterKey, formatSequence } = require('../operationalCounters/
 
 const { Schema } = mongoose;
 
+const settledManualMovement = { $nin: ['pending', 'rejected'] };
+
 const cashRegisterCutSchema = new Schema({
   cutNumber: { type: String, required: true },
   cashRegister: { type: String, required: true },
@@ -54,6 +56,16 @@ const cashRegisterCutSchema = new Schema({
       income: { type: Number, default: 0 },
       expenses: { type: Number, default: 0 }
     }
+  },
+  differenceApproval: {
+    status: {
+      type: String,
+      enum: ['not_required', 'approved'],
+      default: 'not_required'
+    },
+    reason: { type: String, trim: true, maxlength: 1000 },
+    reviewedBy: { type: Schema.ObjectId, ref: 'Users' },
+    reviewedAt: Date
   },
   
   notes: String,
@@ -114,6 +126,7 @@ cashRegisterCutSchema.methods.calculateTaxes = async function calculateTaxes(ses
 const movementQuery = {
   shift: this.shift,
   disable: false,
+  approvalStatus: settledManualMovement,
   type: { $nin: ['sale', 'refund'] },
   paymentMethod: 'cash'
 };

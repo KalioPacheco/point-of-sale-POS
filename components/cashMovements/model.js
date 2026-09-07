@@ -67,6 +67,15 @@ const cashMovementSchema = new Schema({
     type: Schema.ObjectId,
     ref: 'Users',
   },
+  approvalStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'approved',
+    index: true,
+  },
+  approvalRequestedAt: { type: Date, default: Date.now },
+  approvalDecidedAt: Date,
+  approvalNote: { type: String, trim: true, maxlength: 1000 },
   notes: String,
   disable: {
     type: Boolean,
@@ -75,6 +84,8 @@ const cashMovementSchema = new Schema({
 }, {
   timestamps: true,
 });
+
+cashMovementSchema.index({ company: 1, approvalStatus: 1, createdAt: -1, _id: -1 });
 
 cashMovementSchema.statics.generateMovementNumber = async function generateMovementNumber(
   company,
