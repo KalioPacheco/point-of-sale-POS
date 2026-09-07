@@ -161,17 +161,42 @@ const validateCashMovementCreate = [
   body('shiftId').optional().isMongoId().withMessage('Turno invalido'),
   body('shiftId').custom((value, { req }) => Boolean(value) === Boolean(req.body.cashRegister))
     .withMessage('Los movimientos de caja requieren turno; los globales omiten caja y turno'),
+  body('approvalStatus').not().exists().withMessage('La aprobación se deriva del flujo de autorización'),
+  body('authorized').not().exists().withMessage('La autorización se deriva del flujo de autorización'),
+  body('authorizedBy').not().exists().withMessage('El autorizador se deriva de la sesión'),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
+const validateCashMovementRequest = [
+  body('type').isIn(['income', 'withdrawal']).withMessage('Solo se permiten solicitudes de ingreso o retiro'),
+  body('amount').isFloat({ gt: 0 }).withMessage('Monto debe ser mayor a 0'),
+  body('concept').isString().trim().notEmpty().isLength({ max: 1000 }).withMessage('Concepto requerido'),
+  body('description').optional().isString().isLength({ max: 1000 }),
+  body('cashRegister').isString().trim().notEmpty().withMessage('Caja requerida'),
+  body('shiftId').isMongoId().withMessage('Turno invalido'),
+  body('approvalStatus').not().exists().withMessage('La aprobación se deriva del flujo de autorización'),
+  body('authorized').not().exists().withMessage('La autorización se deriva del flujo de autorización'),
+  body('authorizedBy').not().exists().withMessage('El autorizador se deriva de la sesión'),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
+const validateCashMovementDecision = [
+  body('approvalNote').optional().isString().trim().isLength({ max: 1000 }),
   ...forbiddenTenantFields,
   handleValidationErrors
 ];
 
 const validateCashMovementUpdate = [
-  body('concept').optional().isString().trim().notEmpty(),
-  body('description').optional().isString(),
   body('notes').optional().isString(),
-  body('authorized').optional().isBoolean(),
+  body('concept').not().exists().withMessage('El concepto no puede editarse'),
+  body('description').not().exists().withMessage('La descripción no puede editarse'),
   body('type').not().exists().withMessage('El tipo no puede editarse'),
   body('amount').not().exists().withMessage('El monto no puede editarse'),
+  body('authorized').not().exists().withMessage('La autorización no puede editarse'),
+  body('authorizedBy').not().exists().withMessage('El autorizador no puede editarse'),
+  body('approvalStatus').not().exists().withMessage('La aprobación no puede editarse'),
   ...forbiddenTenantFields,
   handleValidationErrors
 ];
@@ -181,6 +206,7 @@ const validateCashRegisterCut = [
   body('shiftId').isMongoId().withMessage('Turno invalido'),
   body('actualCash').optional().isFloat({ min: 0 }).withMessage('Efectivo invalido'),
   body('notes').optional().isString(),
+  body('differenceReason').optional().isString().trim().isLength({ max: 1000 }),
   ...forbiddenTenantFields,
   handleValidationErrors
 ];
@@ -258,6 +284,8 @@ module.exports = {
   validateUserTypeCreate: namedCreate('Nombre de tipo de usuario'),
   validateUserTypeUpdate: namedUpdate,
   validateCashMovementCreate,
+  validateCashMovementRequest,
+  validateCashMovementDecision,
   validateCashMovementUpdate,
   validateCashRegisterCut,
   validateSupplierCreate: supplierFields(false),

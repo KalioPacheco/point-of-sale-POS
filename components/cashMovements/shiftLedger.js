@@ -19,7 +19,13 @@ async function getShiftLedger({ shiftId, companyId, userId, role, page = 0, limi
       const { cash, mixed } = preview.salesSummary;
       const income = round(cash.sales + mixed.cashSales + preview.cashControl.movementsBreakdown.income);
       const expenses = round(cash.refunds + mixed.cashRefunds + preview.cashControl.movementsBreakdown.expenses);
-      const query = { company: companyId, shift: shift._id, cashRegister: shift.cashRegister, disable: false };
+      const query = {
+        company: companyId,
+        shift: shift._id,
+        cashRegister: shift.cashRegister,
+        disable: false,
+        approvalStatus: { $nin: ['pending', 'rejected'] }
+      };
       const total = await Movement.countDocuments(query).session(session);
       const movements = await Movement.find(query).session(session)
         .populate('user', 'name lastNames userName').populate('saleReference', 'payment')
