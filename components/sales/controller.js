@@ -8,9 +8,12 @@ const CashMovement = require('../cashMovements/model');
 const CashRegisterShift = require('../cashRegisterShifts/model');
 const Ticket = require('../ticket/model');
 const Company = require('../companies/model');
+const { InventoryLevel } = require('../inventory/model');
+const branchInventory = require('../inventory/branchInventory');
 const Customer = require('../customer/model');
 const User = require('../users/model');
 const couponsController = require('../coupons/controller');
+const promotionsController = require('../promotions/controller');
 
 // Product snapshots populate these refs, so sales must register them independently of route load order.
 require('../brands/model'); // eslint-disable-line global-require
@@ -66,7 +69,7 @@ function normalizePayment(payment = {}, total) {
   throw new Error('Metodo de pago invalido');
 }
 
-async function createProductSnapshots(products, companyId, session = null) {
+async function createProductSnapshots(products, companyId, session = null, branchId = null) {
   if (!Array.isArray(products) || products.length === 0) {
     throw new Error('Products array is required');
   }
@@ -81,6 +84,19 @@ async function createProductSnapshots(products, companyId, session = null) {
   if (session) query = query.session(session);
   const catalog = await query.exec();
   const byId = new Map(catalog.map(product => [String(product._id), product]));
+
+  const usesBranchInventory = await branchInventory.companyUsesBranchInventory(companyId, session);
+  if (usesBranchInventory && !branchId) {
+    throw Object.assign(new Error('Sucursal requerida para vender'), { status: 400, code: 'BRANCH_REQUIRED' });
+  }
+  if (usesBranchInventory) await branchInventory.activeBranch(companyId, branchId, session);
+  const levels = usesBranchInventory
+    ? await InventoryLevel.find({ company: companyId, branch: branchId, product: { $in: productIds } }).session(session).lean()
+    : [];
+  const levelByItem = new Map(levels.map(level => [
+    `${String(level.product)}:${level.variantId ? String(level.variantId) : ''}`,
+    level,
+  ]));
 
   return products.map(item => {
     const product = byId.get(String(item.productId));
@@ -109,7 +125,10 @@ async function createProductSnapshots(products, companyId, session = null) {
       variantId: variant?._id,
       variantName: variant?.name,
       quantity,
-      availableStock: Number(variant ? variant.stock : product.stock) || 0,
+      availableStock: usesBranchInventory
+        ? Math.max(0, Number(levelByItem.get(`${String(product._id)}:${variant ? String(variant._id) : ''}`)?.onHand || 0)
+          - Number(levelByItem.get(`${String(product._id)}:${variant ? String(variant._id) : ''}`)?.reserved || 0))
+        : Number(variant ? variant.stock : product.stock) || 0,
       priceSnapshot: {
         name: product.name,
         price,
@@ -119,6 +138,7 @@ async function createProductSnapshots(products, companyId, session = null) {
         snapshotDate: new Date(),
         brand: product.brand?.name || '',
         category: product.categories?.[0]?.name || '',
+        categoryIds: (product.categories || []).map(category => category._id || category),
         sku: variant?.sku || product.sku || '',
         description: product.description || ''
       },
@@ -130,18 +150,49 @@ async function createProductSnapshots(products, companyId, session = null) {
 }
 
 function calculateSnapshotTotals(productSnapshots) {
-  const subtotal = roundMoney(productSnapshots.reduce((sum, item) => sum + item.subtotal, 0));
+  const subtotal = roundMoney(productSnapshots.reduce(
+    (sum, item) => sum + (item.taxableSubtotal ?? item.subtotal), 0,
+  ));
   const totalTaxes = roundMoney(productSnapshots.reduce((sum, item) => sum + item.taxAmount, 0));
   return { subtotal, totalTaxes, total: roundMoney(subtotal + totalTaxes) };
+}
+
+function applyPromotionQuoteToSnapshots(productSnapshots, quote) {
+  const allocations = new Map((quote.lineAllocations || []).map(allocation => [
+    allocation.lineIndex,
+    allocation,
+  ]));
+  return productSnapshots.map((snapshot, index) => {
+    const allocation = allocations.get(index);
+    if (!allocation) return snapshot;
+    return {
+      ...snapshot,
+      discountAmount: allocation.discount,
+      taxableSubtotal: allocation.taxableSubtotal,
+      taxAmount: allocation.taxAmount,
+      total: allocation.total,
+    };
+  });
+}
+
+async function activePromotionsForCheckout(companyId, at, session) {
+  // The engine is deployable before activation.  Existing tenants remain on
+  // their legacy checkout until M5 enables the already-present company flag.
+  const companyQuery = Company.findById(companyId).select('featureFlags.promotionsV1');
+  if (session) companyQuery.session(session);
+  const company = await companyQuery.lean();
+  if (!company?.featureFlags?.promotionsV1) return [];
+  return promotionsController.listActive(companyId, at, session);
 }
 
 async function prepareSale(saleData, session = null) {
   const productSnapshots = await createProductSnapshots(
     saleData.products,
     saleData.companyId,
-    session
+    session,
+    saleData.branchId
   );
-  const totals = calculateSnapshotTotals(productSnapshots);
+  const originalTotals = calculateSnapshotTotals(productSnapshots);
   let couponValidation = null;
 
   if (saleData.couponCode) {
@@ -149,7 +200,7 @@ async function prepareSale(saleData, session = null) {
       saleData.couponCode,
       saleData.companyId,
       {
-        ...totals,
+        ...originalTotals,
         products: productSnapshots.map(item => ({
           productId: item.productId,
           variantId: item.variantId,
@@ -163,20 +214,50 @@ async function prepareSale(saleData, session = null) {
     if (!couponValidation.valid) throw new Error(couponValidation.error);
   }
 
-  const couponDiscount = roundMoney(couponValidation?.discount?.discountAmount || 0);
-  const finalTotal = roundMoney(Math.max(0, totals.total - couponDiscount));
+  const promotions = await activePromotionsForCheckout(saleData.companyId, new Date(), session);
+  const quote = promotionsController.quote({
+    companyId: saleData.companyId,
+    products: productSnapshots,
+    customerId: saleData.customerId,
+    branchId: saleData.branchId,
+    now: new Date(),
+    promotions,
+    coupon: couponValidation ? {
+      valid: true,
+      discountAmount: couponValidation.discount.discountAmount,
+    } : null,
+    taxPolicyVersion: 'promotion_v1_before_tax',
+  });
+  const quotedSnapshots = applyPromotionQuoteToSnapshots(productSnapshots, quote);
+  const couponApplied = Boolean(quote.coupon?.applied);
+  const couponDiscount = couponApplied ? quote.couponDiscount : 0;
 
   return {
-    productSnapshots,
-    ...totals,
-    couponValidation,
+    productSnapshots: quotedSnapshots,
+    grossSubtotal: quote.grossSubtotal,
+    subtotal: quote.subtotal,
+    totalTaxes: quote.totalTaxes,
+    total: quote.total,
+    couponValidation: couponApplied ? couponValidation : null,
     couponDiscount,
-    finalTotal,
-    payment: normalizePayment(saleData.payment, finalTotal)
+    couponExclusion: quote.coupon?.exclusionReason || null,
+    promotionDiscount: quote.promotionDiscount,
+    appliedPromotions: quote.appliedPromotions,
+    promotionOutcome: {
+      winner: quote.winner,
+      exclusions: quote.exclusions,
+      coupon: quote.coupon,
+    },
+    taxPolicyVersion: quote.taxPolicyVersion,
+    finalTotal: quote.finalTotal,
+    payment: normalizePayment(saleData.payment, quote.finalTotal)
   };
 }
 
-async function reserveInventory(items, companyId, userId, saleId, session) {
+async function reserveInventory(items, companyId, userId, saleId, session, branchId) {
+  if (await branchInventory.companyUsesBranchInventory(companyId, session)) {
+    return branchInventory.consumeSaleItems({ items, companyId, branchId, actorId: userId, saleId }, session);
+  }
   for (const item of items) {
     if (item.availableStock < item.quantity) {
       throw new Error(
@@ -288,6 +369,8 @@ async function createSaleMovement(sale, session) {
     paymentMethod: sale.payment.method,
     user: sale.createdBy,
     company: sale.company,
+    branch: sale.branch,
+    cashRegisterId: sale.cashRegisterId,
     cashRegister: sale.cashRegister,
     saleReference: sale._id,
     shift: sale.shift,
@@ -326,6 +409,8 @@ async function createSaleTicket(sale, prepared, session) {
     },
     transactionInfo: {
       date: sale.createdAt,
+      branch: sale.branch,
+      cashRegisterId: sale.cashRegisterId,
       cashRegister: sale.cashRegister,
       cashier: { id: sale.createdBy, name: [cashier?.name, cashier?.lastNames].filter(Boolean).join(' ') || cashier?.userName },
       customer: customer ? { id: customer._id, name: customer.name } : undefined
@@ -335,6 +420,7 @@ async function createSaleTicket(sale, prepared, session) {
       productName: item.priceSnapshot.name,
       quantity: item.quantity,
       unitPrice: item.priceSnapshot.price,
+      discount: item.discountAmount || 0,
       totalTaxes: item.taxAmount,
       totalPrice: item.total,
       variant: item.variantName ? { name: item.variantName } : undefined,
@@ -348,12 +434,14 @@ async function createSaleTicket(sale, prepared, session) {
     totals: {
       subtotal: prepared.subtotal,
       totalTaxes: prepared.totalTaxes,
-      discounts: prepared.couponDiscount,
+      discounts: prepared.promotionDiscount,
+      promotionDiscount: prepared.promotionDiscount,
       couponDiscount: prepared.couponDiscount,
       couponCode: prepared.couponValidation?.coupon?.code,
       couponName: prepared.couponValidation?.coupon?.name,
       total: prepared.finalTotal
     },
+    appliedPromotions: prepared.appliedPromotions,
     appliedCoupon: prepared.couponValidation ? {
       couponId: prepared.couponValidation.coupon.id,
       code: prepared.couponValidation.coupon.code,
@@ -397,7 +485,9 @@ async function addSell(sell, idempotencyKey) {
         company: sell.companyId,
         cashRegister: sell.cashRegister,
         cashier: sell.createdBy,
-        status: 'open'
+        status: 'open',
+        ...(sell.branchId ? { branch: sell.branchId } : {}),
+        ...(sell.cashRegisterId ? { cashRegisterId: sell.cashRegisterId } : {})
       }, { $inc: { operationRevision: 1 } }, { new: true, session });
       if (!shift) throw Object.assign(new Error('No open shift exists for this cash register'), { status: 400 });
 
@@ -415,17 +505,33 @@ async function addSell(sell, idempotencyKey) {
         idempotencyKey,
         requestFingerprint: requestFingerprint(sell),
         company: sell.companyId,
+        branch: sell.branchId,
+        cashRegisterId: sell.cashRegisterId,
         createdBy: sell.createdBy,
         customer: sell.customerId || undefined,
         cashRegister: sell.cashRegister,
         shift: shift._id,
         products: prepared.productSnapshots,
+        grossSubtotal: prepared.grossSubtotal,
         subtotal: prepared.subtotal,
         totalTaxes: prepared.totalTaxes,
         total: prepared.total,
         couponCode: prepared.couponValidation?.coupon?.code,
         couponId: prepared.couponValidation?.coupon?.id,
         couponDiscount: prepared.couponDiscount,
+        couponSnapshot: prepared.couponValidation ? {
+          couponId: prepared.couponValidation.coupon.id,
+          code: prepared.couponValidation.coupon.code,
+          name: prepared.couponValidation.coupon.name,
+          discountType: prepared.couponValidation.coupon.discountType,
+          discountValue: prepared.couponValidation.coupon.discountValue,
+          taxPolicyVersion: 'legacy_coupon_v1',
+          discount: prepared.couponDiscount,
+        } : undefined,
+        promotionDiscount: prepared.promotionDiscount,
+        appliedPromotions: prepared.appliedPromotions,
+        promotionOutcome: prepared.promotionOutcome,
+        taxPolicyVersion: prepared.taxPolicyVersion,
         finalTotal: prepared.finalTotal,
         payment: prepared.payment,
         change: prepared.payment.change,
@@ -437,9 +543,19 @@ async function addSell(sell, idempotencyKey) {
         sell.companyId,
         sell.createdBy,
         sale._id,
-        session
+        session,
+        sell.branchId
       );
       await recordCouponUsage(prepared, sale, sell.customerId, sell.companyId, session);
+      if (prepared.appliedPromotions.length > 0) {
+        await promotionsController.recordRedemption({
+          companyId: sell.companyId,
+          sale,
+          customerId: sell.customerId,
+          branchId: sell.branchId,
+          appliedPromotion: prepared.appliedPromotions[0],
+        }, session);
+      }
       await createSaleMovement(sale, session);
       await createSaleTicket(sale, prepared, session);
       saleId = sale._id;
@@ -464,12 +580,18 @@ async function processSaleWithCoupon(saleData) {
   });
   return {
     products: prepared.productSnapshots,
+    grossSubtotal: prepared.grossSubtotal,
     subtotal: prepared.subtotal,
     totalTaxes: prepared.totalTaxes,
     total: prepared.total,
     couponCode: prepared.couponValidation?.coupon?.code || null,
     couponDiscount: prepared.couponDiscount,
     couponId: prepared.couponValidation?.coupon?.id || null,
+    couponExclusion: prepared.couponExclusion,
+    promotionDiscount: prepared.promotionDiscount,
+    appliedPromotions: prepared.appliedPromotions,
+    promotionOutcome: prepared.promotionOutcome,
+    taxPolicyVersion: prepared.taxPolicyVersion,
     finalTotal: prepared.finalTotal
   };
 }
@@ -521,5 +643,8 @@ module.exports = {
   getSaleHistoricalData,
   normalizePayment,
   calculateSnapshotTotals,
-  buildCouponUsageFilter
+  buildCouponUsageFilter,
+  applyPromotionQuoteToSnapshots,
+  activePromotionsForCheckout,
+  processSaleWithPromotions: processSaleWithCoupon
 };

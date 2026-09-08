@@ -310,11 +310,17 @@ function removeUser(userId, companyId) {
   return store.remove(userId, companyId);
 }
 
+function setBranchAssignments(userId, assignments, companyId, assignedBy) {
+  if (!userId) throw new Error('Usuario requerido');
+  return store.setBranchAssignments(userId, assignments, companyId, assignedBy);
+}
+
 module.exports = {
   addUser,
   listUsers,
   updateUser,
   removeUser,
+  setBranchAssignments,
   login,
   refresh,
   logout,

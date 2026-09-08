@@ -11,6 +11,9 @@ const {
 const { validateProductCreate, validateProductUpdate } = require('../../middleware/validation');
 const { Product } = require('./model');
 const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
+const Company = require('../companies/model');
+const { InventoryLevel } = require('../inventory/model');
+const { requireBranchAccess } = require('../../middleware/branch');
 
 const scopeProduct = scopeResource(Product, 'productId');
 
@@ -39,6 +42,29 @@ const addProduct = function addProduct(req, res) {
   return undefined;
 };
 
+async function applyBranchStock(products, companyId, branchId) {
+  const company = await Company.findById(companyId).select('featureFlags.multiBranchInventory').lean();
+  if (!company?.featureFlags?.multiBranchInventory || !branchId) return products;
+  const rows = Array.isArray(products) ? products : products.items;
+  const productIds = rows.map(product => product._id).filter(Boolean);
+  const levels = await InventoryLevel.find({ company: companyId, branch: branchId, product: { $in: productIds } }).lean();
+  const byLevel = new Map(levels.map(level => [`${String(level.product)}:${level.variantId ? String(level.variantId) : ''}`, level]));
+  const withStock = rows.map(product => {
+    const copy = { ...product };
+    if (copy.hasVariants) {
+      copy.variants = (copy.variants || []).map(variant => {
+        const level = byLevel.get(`${String(copy._id)}:${String(variant._id)}`);
+        return { ...variant, stock: Math.max(0, Number(level?.onHand || 0) - Number(level?.reserved || 0)) };
+      });
+    } else {
+      const level = byLevel.get(`${String(copy._id)}:`);
+      copy.stock = Math.max(0, Number(level?.onHand || 0) - Number(level?.reserved || 0));
+    }
+    return copy;
+  });
+  return Array.isArray(products) ? withStock : { ...products, items: withStock };
+}
+
 const listProducts = function listProducts(req, res) {
   const { productId } = req.params;
   const companyId = Helper.getCompanyId(req);
@@ -55,15 +81,33 @@ const listProducts = function listProducts(req, res) {
 
   controller
     .listProducts(productId, companyId, filters)
-    .then(product => {
-      response.success(req, res, product, 200);
-    })
+    .then(product => applyBranchStock(product, companyId, req.query.branchId)
+      .then(mapped => {
+        response.success(req, res, mapped, 200);
+      }))
     .catch(err => {
       response.error(req, res, 'Internal error', 500, err);
     });
   
   return undefined;
 };
+
+async function blockLegacyStockMutation(req, res, next) {
+  try {
+    const company = await Company.findById(Helper.getCompanyId(req)).select('featureFlags.multiBranchInventory').lean();
+    if (company?.featureFlags?.multiBranchInventory) {
+      return response.error(req, res, 'El stock se administra por sucursal; usa los comandos de inventario', 409);
+    }
+    return next();
+  } catch (error) { return next(error); }
+}
+
+async function blockLegacyStockFields(req, res, next) {
+  const hasLegacyStock = Object.prototype.hasOwnProperty.call(req.body || {}, 'stock')
+    || (Array.isArray(req.body?.variants) && req.body.variants.some(variant => Object.prototype.hasOwnProperty.call(variant || {}, 'stock')));
+  if (!hasLegacyStock) return next();
+  return blockLegacyStockMutation(req, res, next);
+}
 
 const updateProduct = function updateProduct(req, res) {
   const product = req.body;
@@ -399,17 +443,17 @@ const getProductsByCategories = function getProductsByCategories(req, res) {
 };
 
 
-router.get('/', authenticateToken, requireCompanyScope, requireRole(['vendedor', 'admin', 'manager']), listProducts);
-router.post('/', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), validateProductCreate, addProduct);
-router.patch('/:productId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, validateProductUpdate, updateProduct);
+router.get('/', authenticateToken, requireCompanyScope, requireRole(['vendedor', 'admin', 'manager']), requireBranchAccess('branchId', { optional: true }), listProducts);
+router.post('/', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), validateProductCreate, blockLegacyStockFields, addProduct);
+router.patch('/:productId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, validateProductUpdate, blockLegacyStockFields, updateProduct);
 router.delete('/:productId', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, removeProduct);
-router.put('/:productId/stock/add', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, addStock);
-router.put('/:productId/stock/reduce', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, reduceStock);
-router.put('/:productId/stock/set', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, setStock);
+router.put('/:productId/stock/add', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, blockLegacyStockMutation, addStock);
+router.put('/:productId/stock/reduce', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, blockLegacyStockMutation, reduceStock);
+router.put('/:productId/stock/set', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, blockLegacyStockMutation, setStock);
 router.get('/:productId/stock/history', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, getStockHistory);
 router.get('/:productId/stock', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, getProductStock);
 router.post('/:productId/variants', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, addVariant);
-router.put('/:productId/variants/:variantId/stock/add', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, addVariantStock);
+router.put('/:productId/variants/:variantId/stock/add', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, blockLegacyStockMutation, addVariantStock);
 router.put('/:productId/variants/:variantId/disable', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, disableVariant);
 router.put('/:productId/variants/:variantId/enable', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), scopeProduct, enableVariant);
 router.get('/reports/low-stock', authenticateToken, requireCompanyScope, requireRole(['admin', 'manager']), getLowStockProducts);

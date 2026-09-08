@@ -1,4 +1,5 @@
 const { pageOptions } = require('../../helpers/query');
+const { applyBranchScope } = require('../../helpers/branchScope');
 const mongoose = require('mongoose');
 const Model = require('./model');
 
@@ -38,6 +39,9 @@ async function listSales(sellId, companyId, cashierId, filters = {}) {
 
   filter.disable = false;
   if (cashierId) filter.createdBy = cashierId;
+  if (Array.isArray(filters.branchIds)) {
+    applyBranchScope(filter, 'branch', filters.branchIds);
+  }
 
 
   const { page, limit, skip } = pageOptions(filters);
@@ -106,6 +110,9 @@ async function listSalesForReports(filters = {}) {
   
   if (filters.cashRegister) {
     query.cashRegister = filters.cashRegister;
+  }
+  if (Array.isArray(filters.branchIds)) {
+    applyBranchScope(query, 'branch', filters.branchIds);
   }
   
   const sales = await Model.find(query)
@@ -179,7 +186,7 @@ async function getSalesSummaryWithHistoricalData(filters = {}) {
     
     summary.totalRevenue += (sale.finalTotal || sale.total || 0) * multiplier;
     summary.totalTaxes += (sale.totalTaxes || 0) * multiplier;
-    summary.totalDiscount += (sale.couponDiscount || 0);
+    summary.totalDiscount += (sale.couponDiscount || 0) + (sale.promotionDiscount || 0);
     
     // Verificar si tiene datos históricos
     if (sale.hasHistoricalData && sale.hasHistoricalData()) {

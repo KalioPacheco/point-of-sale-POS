@@ -5,6 +5,8 @@ const Model = require('./model');
 const UsersModel = require('../users/model');
 const Company = require('../companies/model');
 const CashRegisterShift = require('../cashRegisterShifts/model');
+const Branch = require('../branches/model');
+const { applyBranchScope } = require('../../helpers/branchScope');
 
 const roundMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
@@ -22,7 +24,9 @@ async function createCashRegisterCut(cutData) {
       }
       // Checkout, refunds and shift-bound movement creation share this write fence.
       const shift = await CashRegisterShift.findOneAndUpdate({
-        _id: cutData.shiftId, company: cutData.companyId, cashRegister: cutData.cashRegister
+        _id: cutData.shiftId, company: cutData.companyId, cashRegister: cutData.cashRegister,
+        ...(cutData.branchId ? { branch: cutData.branchId } : {}),
+        ...(cutData.cashRegisterId ? { cashRegisterId: cutData.cashRegisterId } : {})
       }, { $inc: { operationRevision: 1 } }, { new: true, session });
       if (!shift) throw new Error('Shift pending cut not found for this cash register');
 
@@ -52,7 +56,8 @@ async function createCashRegisterCut(cutData) {
       const company = await Company.findById(cutData.companyId).session(session).select('name').lean();
       cut.set({
         companyName: existing?.companyName || company?.name,
-        cutNumber, cashRegister: cutData.cashRegister, cashier: shift.cashier,
+        cutNumber, cashRegister: cutData.cashRegister, cashRegisterId: shift.cashRegisterId,
+        branch: shift.branch, cashier: shift.cashier,
         administrator: cutData.administratorId, shift: shift._id,
         shiftStart: shift.openedAt, shiftEnd: shift.closedAt || new Date(),
         salesSummary: new Model().salesSummary.toObject(),
@@ -96,6 +101,9 @@ function cutQuery(filters) {
   if (!mongoose.Types.ObjectId.isValid(filters.companyId)) throw new Error('Company required');
   const query = { disable: false, company: new mongoose.Types.ObjectId(filters.companyId) };
   if (filters.cashRegister) query.cashRegister = filters.cashRegister;
+  if (Array.isArray(filters.branchIds)) {
+    applyBranchScope(query, 'branch', filters.branchIds.map(id => new mongoose.Types.ObjectId(id)));
+  }
   if (filters.cashierId) {
     if (!mongoose.Types.ObjectId.isValid(filters.cashierId)) throw new Error('Invalid cashier ID');
     query.cashier = new mongoose.Types.ObjectId(filters.cashierId);
@@ -122,6 +130,8 @@ async function generateCashRegisterReport(filters = {}) {
   const summary = result.summary[0] || { totalCuts: 0, totalSales: 0, totalDifferences: 0 };
   delete summary._id;
   const cuts = await Model.populate(result.cuts, [
+    { path: 'branch', select: 'code name address' },
+    { path: 'cashRegisterId', select: 'code name' },
     { path: 'cashier', select: 'userName name' },
     { path: 'administrator', select: 'userName name' },
     { path: 'differenceApproval.reviewedBy', select: 'userName name' }
@@ -163,6 +173,15 @@ async function generateCutPDFDirect(cutId, res) {
 
   doc.text(`Corte: ${cut.cutNumber}`);
   doc.text(`Caja: ${cut.cashRegister}`);
+  if (cut.branch) {
+    const branch = await Branch.findOne({ _id: cut.branch, company: cut.company }).select('name address').lean();
+    if (branch) {
+      doc.text(`Sucursal: ${branch.name}`);
+      const address = [branch.address?.street, branch.address?.city, branch.address?.state,
+        branch.address?.country, branch.address?.postalCode].filter(Boolean).join(', ');
+      if (address) doc.text(address);
+    }
+  }
   doc.text(`Fecha: ${cut.cutDate.toLocaleDateString('es-MX')}`);
   doc.text(`Cajero: ${cashierData?.name || cashierData?.userName || 'N/A'}`);
   doc.text(`Admin: ${adminData?.name || adminData?.userName || 'N/A'}`);
@@ -225,9 +244,9 @@ module.exports = {
   getCashRegisterCutById,
   generateCutPDFDirect, 
   generateCashRegisterReport,
-  getDailyCashRegisterReport: (date, companyId) => generateCashRegisterReport({ date, companyId }),
-  getUserCashRegisterReport: (userId, startDate, endDate, companyId) => 
-    generateCashRegisterReport({ cashierId: userId, startDate, endDate, companyId }),
-  getCashRegisterReport: (cashRegister, startDate, endDate, companyId) => 
-    generateCashRegisterReport({ cashRegister, startDate, endDate, companyId })
+  getDailyCashRegisterReport: (date, companyId, branchIds) => generateCashRegisterReport({ date, companyId, branchIds }),
+  getUserCashRegisterReport: (userId, startDate, endDate, companyId, branchIds) =>
+    generateCashRegisterReport({ cashierId: userId, startDate, endDate, companyId, branchIds }),
+  getCashRegisterReport: (cashRegister, startDate, endDate, companyId, branchIds) =>
+    generateCashRegisterReport({ cashRegister, startDate, endDate, companyId, branchIds })
 };

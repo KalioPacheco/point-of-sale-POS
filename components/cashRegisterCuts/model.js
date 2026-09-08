@@ -8,6 +8,8 @@ const settledManualMovement = { $nin: ['pending', 'rejected'] };
 const cashRegisterCutSchema = new Schema({
   cutNumber: { type: String, required: true },
   cashRegister: { type: String, required: true },
+  cashRegisterId: { type: Schema.ObjectId, ref: 'CashRegisters', index: true },
+  branch: { type: Schema.ObjectId, ref: 'Branches', index: true },
   companyName: String,
   
   cashier: { type: Schema.ObjectId, ref: 'Users', required: true },
@@ -78,6 +80,7 @@ cashRegisterCutSchema.index({ company: 1, cutNumber: 1 }, { unique: true });
 cashRegisterCutSchema.index({ company: 1, shift: 1 }, { unique: true });
 
 cashRegisterCutSchema.index({ company: 1, disable: 1, cutDate: -1, _id: -1 });
+cashRegisterCutSchema.index({ company: 1, branch: 1, cutDate: -1, _id: -1 });
 
 cashRegisterCutSchema.statics.generateCutNumber = async function generateCutNumber(
   cashRegister,

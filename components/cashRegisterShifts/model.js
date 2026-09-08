@@ -4,6 +4,8 @@ const { Schema } = mongoose;
 
 const cashRegisterShiftSchema = new Schema({
   company: { type: Schema.ObjectId, ref: 'Companies', required: true, index: true },
+  branch: { type: Schema.ObjectId, ref: 'Branches', index: true },
+  cashRegisterId: { type: Schema.ObjectId, ref: 'CashRegisters', index: true },
   cashRegister: { type: String, required: true, trim: true },
   cashier: { type: Schema.ObjectId, ref: 'Users', required: true },
   openingCash: { type: Number, required: true, min: 0 },
@@ -28,6 +30,11 @@ cashRegisterShiftSchema.index(
   { company: 1, cashRegister: 1, status: 1 },
   { unique: true, partialFilterExpression: { status: 'open' } }
 );
+cashRegisterShiftSchema.index(
+  { company: 1, cashRegisterId: 1, status: 1 },
+  { unique: true, partialFilterExpression: { status: 'open', cashRegisterId: { $exists: true } } }
+);
+cashRegisterShiftSchema.index({ company: 1, branch: 1, openedAt: -1, _id: -1 });
 
 module.exports = mongoose.model(
   'CashRegisterShifts',

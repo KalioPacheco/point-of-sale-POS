@@ -461,11 +461,11 @@ const processRefundTicket = (refundData, userId, companyId) => {
 
 
 
-const getTaxReport = async (companyId, startDate, endDate) => {
+const getTaxReport = async (companyId, startDate, endDate, branchIds = undefined) => {
   try {
     if (!companyId) throw new Error('Company ID required');
     
-    const tickets = await store.getTicketsByDateRange(companyId, startDate, endDate, ['active']);
+    const tickets = await store.getTicketsByDateRange(companyId, startDate, endDate, ['active'], branchIds);
     
     const report = {
       period: {

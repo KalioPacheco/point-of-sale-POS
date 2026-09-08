@@ -12,6 +12,7 @@ const {
 } = require('../middleware/validation');
 const { normalizeError } = require('../network');
 const { counterKey, formatSequence } = require('../components/operationalCounters/model');
+const { evaluatePromotions } = require('../components/promotions/evaluator');
 
 const ids = {
   company: '64b000000000000000000001',
@@ -81,6 +82,37 @@ test('snapshot totals use monetary rounding', () => {
     { subtotal: 10.01, taxAmount: 1.6016 },
     { subtotal: 20.02, taxAmount: 3.2032 }
   ]), { subtotal: 30.03, totalTaxes: 4.8, total: 34.83 });
+});
+
+test('sale snapshots retain the gross amount while totals use a promotion taxable base', () => {
+  const promotion = evaluatePromotions({
+    companyId: ids.company,
+    now: new Date('2026-09-08T12:00:00.000Z'),
+    products: [{ productId: ids.product, quantity: 1, price: 100, taxRate: 16 }],
+    promotions: [{
+      _id: ids.coupon,
+      company: ids.company,
+      name: 'Ten percent',
+      status: 'active',
+      startsAt: '2026-09-01T00:00:00.000Z',
+      endsAt: '2026-09-30T00:00:00.000Z',
+      benefit: { type: 'percentage', value: 10 },
+    }],
+  });
+  const snapshots = sales.applyPromotionQuoteToSnapshots([{
+    subtotal: 100,
+    taxAmount: 16,
+    total: 116,
+  }], promotion);
+
+  assert.equal(snapshots[0].subtotal, 100);
+  assert.equal(snapshots[0].taxableSubtotal, 90);
+  assert.equal(snapshots[0].taxAmount, 14.4);
+  assert.deepEqual(sales.calculateSnapshotTotals(snapshots), {
+    subtotal: 90,
+    totalTaxes: 14.4,
+    total: 104.4,
+  });
 });
 
 test('coupon consumption filter protects both sale and customer uniqueness', () => {

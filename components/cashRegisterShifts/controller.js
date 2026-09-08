@@ -11,7 +11,9 @@ function openShift(data) {
 
 module.exports = {
   openShift,
-  getCurrentShift: store.getCurrentShift,
+  getCurrentShift(companyId, cashRegister, cashierId, cashRegisterContext) {
+    return store.getCurrentShift(companyId, cashRegister, cashierId, cashRegisterContext);
+  },
   closeShift(shiftId, companyId, closingCash, notes, actorId, actorRole) {
     if (!Number.isFinite(closingCash) || closingCash < 0) {
       throw new Error('Closing cash must be zero or greater');

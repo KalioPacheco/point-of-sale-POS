@@ -15,6 +15,9 @@
     "migrate:status": "node scripts/migrate.js status",
     "migrate:plan": "node scripts/migrate.js plan",
     "migrate:up": "node scripts/migrate.js up",
+    "m5:report": "node scripts/m5-rollout.js report",
+    "m5:activate": "node scripts/m5-rollout.js activate",
+    "m5:deactivate": "node scripts/m5-rollout.js deactivate",
     "test:aud01": "node --test tests/tenant-scoping.test.js",
     "test:aud08": "node --test tests/stock-concurrency.test.js",
     "check": "npm run lint && npm run typecheck && npm test && npm run build"

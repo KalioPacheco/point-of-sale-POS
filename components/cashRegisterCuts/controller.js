@@ -18,6 +18,6 @@ module.exports = {
   getCashRegisterCutById: (cutId) => store.getCashRegisterCutById(cutId),
   generateCashRegisterReport: (filters) => store.generateCashRegisterReport(filters),
   getDailyCashRegisterReport: store.getDailyCashRegisterReport,
-  getUserCashRegisterReport: store.getUserCashRegisterReport, 
+  getUserCashRegisterReport: store.getUserCashRegisterReport,
   getCashRegisterReport: store.getCashRegisterReport
 };
