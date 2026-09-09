@@ -11,10 +11,12 @@ const Ticket = require('./model');
 const Sale = require('../sales/model');
 const Cut = require('../cashRegisterCuts/model');
 const { requireCompanyScope, scopeResource } = require('../../middleware/tenant');
+const { requireScopedBranchAccess, assignedBranchIds, isAdmin } = require('../../middleware/branch');
 
 const router = express.Router();
 const scopeTicket = scopeResource(Ticket, 'ticketId');
 const scopeSale = scopeResource(Sale, 'saleId');
+const scopeRefundSale = scopeResource(Sale, 'originalSaleId');
 const scopeCut = scopeResource(Cut, 'cutId');
 router.use(authenticateToken, requireCompanyScope);
 
@@ -104,7 +106,7 @@ router.get('/reports/taxes', authenticateToken, requireRole(['admin', 'manager']
     return response.error(req, res, 'Start date and end date are required', 400);
   }
 
-  return handleRequest(req, res, controller.getTaxReport(companyId, startDate, endDate));
+  return handleRequest(req, res, controller.getTaxReport(companyId, startDate, endDate, isAdmin(req.user) ? undefined : assignedBranchIds(req.user)));
 });
 
 
@@ -125,7 +127,7 @@ router.post('/process-sale-with-coupon', legacyTicketCreationDisabled);
 
 router.post('/from-sale/:saleId?', legacyTicketCreationDisabled);
 
-router.post('/from-cut/:cutId?', requireRole(['admin', 'manager']), scopeCut, (req, res) => {
+router.post('/from-cut/:cutId?', requireRole(['admin', 'manager']), scopeCut, requireScopedBranchAccess(), (req, res) => {
   const cutId = req.params.cutId || req.body.cutId;
   const userId = Helper.getUserId(req);
   const companyId = Helper.getCompanyId(req);
@@ -139,7 +141,7 @@ router.post('/from-cut/:cutId?', requireRole(['admin', 'manager']), scopeCut, (r
 
 router.post('/process-sale', legacyTicketCreationDisabled);
 
-router.post('/process-refund', authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
+router.post('/process-refund', authenticateToken, requireRole(['admin', 'manager']), scopeRefundSale, requireScopedBranchAccess(), (req, res) => {
   const refundData = req.body;
   const userId = Helper.getUserId(req);
   const companyId = Helper.getCompanyId(req);
@@ -151,19 +153,20 @@ router.post('/process-refund', authenticateToken, requireRole(['admin', 'manager
 router.get('/stats', authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   const filters = { 
     ...req.query, 
-    companyId: Helper.getCompanyId(req) 
+    companyId: Helper.getCompanyId(req),
+    branchIds: isAdmin(req.user) ? undefined : assignedBranchIds(req.user)
   };
   return handleRequest(req, res, controller.getTicketStats(filters));
 });
 
 
 
-router.get('/:ticketId/data', authenticateToken, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
+router.get('/:ticketId/data', authenticateToken, validateId('ticketId'), scopeTicket, requireScopedBranchAccess('scopedResource', 'transactionInfo.branch'), requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   return handleRequest(req, res, controller.generateTicketData(ticketId));
 });
 
-router.get('/:ticketId/pdf', authenticateToken, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
+router.get('/:ticketId/pdf', authenticateToken, validateId('ticketId'), scopeTicket, requireScopedBranchAccess('scopedResource', 'transactionInfo.branch'), requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   const format = req.query.format || '80mm';
 
@@ -181,13 +184,13 @@ router.get('/:ticketId/pdf', authenticateToken, validateId('ticketId'), scopeTic
     });
 });
 
-router.get('/:ticketId/receipt-with-coupon', authenticateToken, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
+router.get('/:ticketId/receipt-with-coupon', authenticateToken, validateId('ticketId'), scopeTicket, requireScopedBranchAccess('scopedResource', 'transactionInfo.branch'), requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   
   return handleRequest(req, res, controller.generateTicketReceiptWithCoupon(ticketId));
 });
 
-router.get('/:ticketId/coupon-template', authenticateToken, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
+router.get('/:ticketId/coupon-template', authenticateToken, validateId('ticketId'), scopeTicket, requireScopedBranchAccess('scopedResource', 'transactionInfo.branch'), requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   
   controller.getTicketById(ticketId)
@@ -200,13 +203,13 @@ router.get('/:ticketId/coupon-template', authenticateToken, validateId('ticketId
 
 
 
-router.post('/:ticketId/reprint', authenticateToken, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
+router.post('/:ticketId/reprint', authenticateToken, validateId('ticketId'), scopeTicket, requireScopedBranchAccess('scopedResource', 'transactionInfo.branch'), requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   const userId = Helper.getUserId(req);
   return handleRequest(req, res, controller.reprintTicket(ticketId, userId));
 });
 
-router.post('/:ticketId/cancel', authenticateToken, requireRole(['admin', 'manager']), validateId('ticketId'), scopeTicket, (req, res) => {
+router.post('/:ticketId/cancel', authenticateToken, requireRole(['admin', 'manager']), validateId('ticketId'), scopeTicket, requireScopedBranchAccess('scopedResource', 'transactionInfo.branch'), (req, res) => {
   const { ticketId } = req.params;
   const { reason } = req.body;
   const userId = Helper.getUserId(req);
@@ -237,7 +240,7 @@ router.get('/:saleId', authenticateToken, validateId('saleId'), (req, res, next)
     return response.error(req, res, 'Invalid format. Use: 58mm or 80mm', 400);
   }
 
-  return scopeSale(req, res, () => requireOwnSaleForSeller(req, res, () => store.generateTicketPDFFromSale(
+  return scopeSale(req, res, () => requireScopedBranchAccess()(req, res, () => requireOwnSaleForSeller(req, res, () => store.generateTicketPDFFromSale(
       saleId,
       format,
       res,
@@ -249,12 +252,12 @@ router.get('/:saleId', authenticateToken, validateId('saleId'), (req, res, next)
         return response.error(req, res, err.message || 'PDF error', 500);
       }
       return undefined;
-    })));
+    }))));
 });
 
 
 
-router.get('/:ticketId', authenticateToken, validateId('ticketId'), scopeTicket, requireOwnTicketForSeller, (req, res) => {
+router.get('/:ticketId', authenticateToken, validateId('ticketId'), scopeTicket, requireScopedBranchAccess('scopedResource', 'transactionInfo.branch'), requireOwnTicketForSeller, (req, res) => {
   const { ticketId } = req.params;
   return handleRequest(req, res, controller.getTicketById(ticketId));
 });
@@ -264,7 +267,8 @@ router.post('/', legacyTicketCreationDisabled);
 router.get('/', authenticateToken, requireRole(['admin', 'manager']), (req, res) => {
   const filters = { 
     ...req.query, 
-    companyId: Helper.getCompanyId(req) 
+    companyId: Helper.getCompanyId(req),
+    branchIds: isAdmin(req.user) ? undefined : assignedBranchIds(req.user)
   };
   return handleRequest(req, res, controller.getTickets(filters));
 });

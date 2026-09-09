@@ -89,9 +89,9 @@ module.exports = {
     return store.deleteMovement(movementId);
   },
 
-  getDailySummary(date, companyId) {
+  getDailySummary(date, companyId, branchIds) {
     if (!date) throw new Error('Date required');
-    return store.getDailySummary(date, companyId);
+    return store.getDailySummary(date, companyId, branchIds);
   },
 
   getUserMovements(userId, filters) {
@@ -104,11 +104,11 @@ module.exports = {
     return store.getCashRegisterMovements(cashRegister, filters);
   },
 
-  getMovementsByDateRange(startDate, endDate, companyId) {
+  getMovementsByDateRange(startDate, endDate, companyId, branchIds) {
     if (!startDate || !endDate) throw new Error('Start date and end date required');
     if (new Date(endDate) <= new Date(startDate)) {
       throw new Error('End date must be after start date');
     }
-    return store.getMovementsByDateRange(startDate, endDate, companyId);
+    return store.getMovementsByDateRange(startDate, endDate, companyId, branchIds);
   }
 };

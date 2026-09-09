@@ -46,6 +46,11 @@ const mySchema = new Schema({
     },
     updatedAt: Date,
   },
+  featureFlags: {
+    multiBranchFoundation: { type: Boolean, default: false },
+    multiBranchInventory: { type: Boolean, default: false },
+    promotionsV1: { type: Boolean, default: false },
+  },
   createdAt: {
     type: Date,
     default: Date.now,

@@ -1,7 +1,12 @@
 const Model = require('./model');
 const Shift = require('../cashRegisterShifts/model');
+const { applyBranchScope: applyScope } = require('../../helpers/branchScope');
 
 const settledApproval = { $nin: ['pending', 'rejected'] };
+
+function applyBranchScope(query, branchIds) {
+  return applyScope(query, 'branch', branchIds);
+}
 
 const populateMovement = movement => Model.findById(movement.id || movement._id)
   .populate('user', 'name lastNames userName')
@@ -20,7 +25,9 @@ async function createMovement(movementData) {
       if (movementData.shiftId) {
         const shift = await Shift.findOneAndUpdate({
           _id: movementData.shiftId, company: movementData.companyId,
-          cashRegister: movementData.cashRegister, cashier: movementData.userId, status: 'open'
+          cashRegister: movementData.cashRegister, cashier: movementData.userId, status: 'open',
+          ...(movementData.branchId ? { branch: movementData.branchId } : {}),
+          ...(movementData.cashRegisterId ? { cashRegisterId: movementData.cashRegisterId } : {})
         }, { $inc: { operationRevision: 1 } }, { new: true, session });
         if (!shift) throw new Error('Open shift not found for cash movement');
       }
@@ -40,6 +47,8 @@ async function createMovement(movementData) {
         paymentMethod: movementData.paymentMethod || 'cash',
         user: movementData.userId,
         company: movementData.companyId,
+        branch: movementData.branchId,
+        cashRegisterId: movementData.cashRegisterId,
         cashRegister: movementData.cashRegister,
         saleReference: movementData.saleReference,
         shift: movementData.shiftId,
@@ -118,9 +127,12 @@ async function decideRequestedMovement(movementId, decision) {
   }
 }
 
-async function getPendingMovements({ companyId, userId, role }) {
+async function getPendingMovements({ companyId, userId, role, branchIds = null }) {
   const query = { company: companyId, disable: false, approvalStatus: 'pending' };
   if (role === 'vendedor') query.user = userId;
+  if (Array.isArray(branchIds)) {
+    applyBranchScope(query, branchIds);
+  }
   return Model.find(query)
     .populate('user', 'name lastNames userName')
     .populate('authorizedBy', 'name lastNames userName')
@@ -139,6 +151,9 @@ async function getMovements(filters = {}) {
     if (filters.userId) query.user = filters.userId;
     if (filters.type) query.type = filters.type;
     if (filters.cashRegister) query.cashRegister = filters.cashRegister;
+    if (Array.isArray(filters.branchIds)) {
+      applyBranchScope(query, filters.branchIds);
+    }
     if (filters.paymentMethod) query.paymentMethod = filters.paymentMethod;
     
     if (filters.startDate || filters.endDate) {
@@ -237,7 +252,7 @@ async function deleteMovement(movementId) {
   }
 }
 
-async function getDailySummary(date, companyId) {
+async function getDailySummary(date, companyId, branchIds = undefined) {
   try {
     const startOfDay = new Date(date);
     const endOfDay = new Date(date);
@@ -252,6 +267,7 @@ async function getDailySummary(date, companyId) {
     if (companyId && companyId !== 'default-company-id') {
       query.company = companyId;
     }
+    applyBranchScope(query, branchIds);
 
     const movements = await Model.find(query);
 
@@ -312,6 +328,7 @@ async function getUserMovements(userId, filters = {}) {
       user: userId 
     };
     if (filters.companyId) query.company = filters.companyId;
+    applyBranchScope(query, filters.branchIds);
 
     if (filters.startDate || filters.endDate) {
       query.createdAt = {};
@@ -339,6 +356,7 @@ async function getCashRegisterMovements(cashRegister, filters = {}) {
       cashRegister: cashRegister 
     };
     if (filters.companyId) query.company = filters.companyId;
+    applyBranchScope(query, filters.branchIds);
 
     if (filters.startDate || filters.endDate) {
       query.createdAt = {};
@@ -358,7 +376,7 @@ async function getCashRegisterMovements(cashRegister, filters = {}) {
   }
 }
 
-async function getMovementsByDateRange(startDate, endDate, companyId) {
+async function getMovementsByDateRange(startDate, endDate, companyId, branchIds = undefined) {
   try {
     const query = {
       disable: false,
@@ -372,6 +390,7 @@ async function getMovementsByDateRange(startDate, endDate, companyId) {
     if (companyId && companyId !== 'default-company-id') {
       query.company = companyId;
     }
+    applyBranchScope(query, branchIds);
 
     const movements = await Model.find(query)
       .populate('user', 'name lastNames userName')

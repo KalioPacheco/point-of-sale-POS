@@ -1,10 +1,11 @@
 const Shift = require('../cashRegisterShifts/model');
 const Cut = require('../cashRegisterCuts/model');
 const Movement = require('./model');
+const { applyBranchScope } = require('../../helpers/branchScope');
 
 const round = value => Math.round((value + Number.EPSILON) * 100) / 100;
 
-async function getShiftLedger({ shiftId, companyId, userId, role, page = 0, limit = 25 }) {
+async function getShiftLedger({ shiftId, companyId, userId, role, branchIds = null, page = 0, limit = 25 }) {
   const session = await Shift.db.startSession();
   let result;
   try {
@@ -12,6 +13,9 @@ async function getShiftLedger({ shiftId, companyId, userId, role, page = 0, limi
     await session.withTransaction(async () => {
       const filter = { _id: shiftId, company: companyId };
       if (role === 'vendedor') filter.cashier = userId;
+      if (Array.isArray(branchIds)) {
+        applyBranchScope(filter, 'branch', branchIds);
+      }
       const shift = await Shift.findOne(filter).session(session);
       if (!shift) throw new Error('Shift not found');
       const preview = new Cut({ company: companyId, shift: shift._id, cashRegister: shift.cashRegister });
@@ -23,6 +27,7 @@ async function getShiftLedger({ shiftId, companyId, userId, role, page = 0, limi
         company: companyId,
         shift: shift._id,
         cashRegister: shift.cashRegister,
+        ...(shift.branch ? { branch: shift.branch } : {}),
         disable: false,
         approvalStatus: { $nin: ['pending', 'rejected'] }
       };

@@ -1156,7 +1156,10 @@ test('M-09 HTTP persists campaign dates and rejects future, expired and inverted
   const id = created.data.body._id;
   const reloaded = await api(`/coupons/${id}`, { token });
   assert.equal(reloaded.data.body.validFrom, validFrom);
-  const payload = httpSalePayload(f, { couponCode: created.data.body.code });
+  const payload = httpSalePayload(f, {
+    couponCode: created.data.body.code,
+    products: [{ productId: f.product._id, quantity: 2 }],
+  });
   const preview = await api('/sales/preview-with-coupon', { token, method: 'POST', body: payload });
   assert.ok(preview.status >= 400);
   const checkout = await api('/sales', { token, method: 'POST', body: payload, headers: { 'Idempotency-Key': 'future-rejected' } });

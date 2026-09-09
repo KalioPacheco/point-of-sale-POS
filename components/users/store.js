@@ -1,4 +1,6 @@
 const Model = require('./model');
+const Branch = require('../branches/model');
+const CashRegister = require('../cashRegisters/model');
 
 function sanitizeUser(userDocument) {
   if (!userDocument) {
@@ -54,6 +56,8 @@ function listUsers(userId, companyId) {
       .select('-password')
       .populate('typeUser')
       .populate('company')
+      .populate('branchAssignments.branch', 'code name active')
+      .populate('branchAssignments.defaultCashRegister', 'code name branch active')
       .exec((err, populated) => {
         if (err) {
           reject(err);
@@ -137,6 +141,51 @@ async function removeUser(userId, companyId) {
   return sanitizeUser(savedUser);
 }
 
+async function setBranchAssignments(userId, assignments, companyId, assignedBy) {
+  if (!Array.isArray(assignments)) throw new Error('Las asignaciones de sucursal deben ser una lista');
+  const user = await Model.findOne({ _id: userId, company: companyId, disable: false });
+  if (!user) throw new Error('Usuario no encontrado en el scope de la empresa');
+
+  const branchIds = assignments.map(item => String(item?.branchId || '')).filter(Boolean);
+  if (new Set(branchIds).size !== branchIds.length) throw new Error('No se puede asignar una sucursal más de una vez');
+  if (user.role !== 'admin' && assignments.every(item => item?.active === false)) {
+    const error = new Error('Un vendedor o manager debe conservar al menos una sucursal activa');
+    error.status = 400;
+    throw error;
+  }
+  const branches = branchIds.length ? await Branch.find({ _id: { $in: branchIds }, company: companyId, active: true }).lean() : [];
+  if (branches.length !== branchIds.length) throw new Error('Una o más sucursales no son válidas para la empresa');
+
+  const registers = assignments.filter(item => item?.defaultCashRegisterId).length
+    ? await CashRegister.find({
+      _id: { $in: assignments.map(item => item.defaultCashRegisterId).filter(Boolean) },
+      company: companyId,
+      active: true,
+    }).lean()
+    : [];
+  const registerById = new Map(registers.map(register => [String(register._id), register]));
+  user.branchAssignments = assignments.map((item) => {
+    const branchId = String(item.branchId);
+    const registerId = item.defaultCashRegisterId ? String(item.defaultCashRegisterId) : null;
+    if (registerId && String(registerById.get(registerId)?.branch) !== branchId) {
+      throw new Error('La caja predeterminada debe pertenecer a la sucursal asignada');
+    }
+    return {
+      branch: branchId,
+      defaultCashRegister: registerId || undefined,
+      active: item.active !== false,
+      assignedBy,
+      assignedAt: new Date(),
+    };
+  });
+  user.updated = true;
+  user.updatedAt = new Date();
+  const saved = await user.save();
+  await saved.populate('branchAssignments.branch', 'code name active');
+  await saved.populate('branchAssignments.defaultCashRegister', 'code name branch active');
+  return sanitizeUser(saved);
+}
+
 async function logout(userId) {
   if (!userId) {
     throw new Error('Usuario no autenticado');
@@ -162,5 +211,6 @@ module.exports = {
   list: listUsers,
   update: updateUser,
   remove: removeUser,
+  setBranchAssignments,
   logout,
 };

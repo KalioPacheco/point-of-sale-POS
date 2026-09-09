@@ -26,13 +26,42 @@ const productSnapshotSchema = new Schema({
  
     brand: String,
     category: String,
+    categoryIds: [{ type: Schema.ObjectId, ref: 'Categories' }],
     sku: String,
     description: String
   },
 
   subtotal: { type: Number, required: true }, 
+  discountAmount: { type: Number, default: 0, min: 0 },
+  taxableSubtotal: { type: Number, min: 0 },
   taxAmount: { type: Number, default: 0 },    
   total: { type: Number, required: true }     
+}, { _id: false });
+
+const promotionAllocationSchema = new Schema({
+  lineIndex: Number,
+  productId: { type: Schema.ObjectId, ref: 'Products' },
+  variantId: { type: Schema.ObjectId },
+  quantity: Number,
+  grossSubtotal: Number,
+  discount: Number,
+  taxableSubtotal: Number,
+  taxRate: Number,
+  taxAmount: Number,
+  total: Number,
+}, { _id: false });
+
+const appliedPromotionSchema = new Schema({
+  promotionId: { type: Schema.ObjectId, ref: 'Promotions', required: true },
+  version: { type: Number, required: true },
+  name: String,
+  priority: Number,
+  taxPolicyVersion: { type: String, required: true },
+  benefit: Schema.Types.Mixed,
+  conditions: Schema.Types.Mixed,
+  discount: { type: Number, required: true, min: 0 },
+  lineAllocations: { type: [promotionAllocationSchema], default: [] },
+  cartAllocation: { type: Number, default: 0, min: 0 },
 }, { _id: false });
 
 const mySchema = new Schema({
@@ -87,6 +116,8 @@ const mySchema = new Schema({
     ref: 'Companies',
     required: true,
   },
+  branch: { type: Schema.ObjectId, ref: 'Branches', index: true },
+  cashRegisterId: { type: Schema.ObjectId, ref: 'CashRegisters', index: true },
   cashRegister: { type: String, required: true },
   shift: { type: Schema.ObjectId, ref: 'CashRegisterShifts', required: true },
   customer: { type: Schema.ObjectId, ref: 'Customers' },
@@ -100,6 +131,8 @@ const mySchema = new Schema({
     refundedBy: { type: Schema.ObjectId, ref: 'Users' },
     reason: String,
     shift: { type: Schema.ObjectId, ref: 'CashRegisterShifts' },
+    branch: { type: Schema.ObjectId, ref: 'Branches' },
+    cashRegisterId: { type: Schema.ObjectId, ref: 'CashRegisters' },
     cashRegister: String
   },
   payment: {
@@ -126,6 +159,13 @@ const mySchema = new Schema({
     required: true,
     min: 0
   },
+  // `grossSubtotal` preserves the catalog amount.  `subtotal` is the taxable
+  // base after a V1 promotion has been allocated by line.
+  grossSubtotal: { type: Number, min: 0 },
+  taxPolicyVersion: { type: String, default: 'legacy_coupon_v1' },
+  promotionDiscount: { type: Number, default: 0, min: 0 },
+  appliedPromotions: { type: [appliedPromotionSchema], default: [] },
+  promotionOutcome: Schema.Types.Mixed,
   
   couponCode: String,
   couponDiscount: {
@@ -136,10 +176,12 @@ const mySchema = new Schema({
     type: Schema.ObjectId,
     ref: 'Coupons'
   },
+  couponSnapshot: Schema.Types.Mixed,
   finalTotal: { type: Number, required: true, min: 0 }
 });
 
 mySchema.index({ company: 1, idempotencyKey: 1 }, { unique: true });
+mySchema.index({ company: 1, branch: 1, createdAt: -1, _id: -1 });
 
 
 mySchema.methods.calculateTaxesFromSnapshots = function calculateTaxesFromSnapshots(couponData = null) {
