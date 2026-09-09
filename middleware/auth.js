@@ -44,6 +44,7 @@ const buildAuthUser = (userDocument, decodedToken = {}) => {
     role: normalizeRole(user.role || ''),
     typeUser: user.typeUser || decodedToken.typeUser || null,
     company: user.company || null,
+    branchAssignments: user.branchAssignments || [],
     photo: user.photo || decodedToken.photo || '',
     tokenVersion: user.tokenVersion ?? decodedToken.tokenVersion ?? 0,
     auth: {
@@ -86,7 +87,7 @@ const authenticateToken = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await Users.findById(decoded.userId || decoded.id)
-      .select('_id userName name lastNames role typeUser company photo disable tokenVersion')
+      .select('_id userName name lastNames role typeUser company photo disable tokenVersion branchAssignments')
       .lean();
 
     if (!user || user.disable === true) {

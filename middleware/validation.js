@@ -58,6 +58,13 @@ const validateSale = [
   body('products.*.price').not().exists().withMessage('El precio es autoritativo del servidor'),
   body('products.*.subtotal').not().exists().withMessage('El subtotal es autoritativo del servidor'),
   body('products.*.taxAmount').not().exists().withMessage('Los impuestos son autoritativos del servidor'),
+  body('subtotal').not().exists().withMessage('El subtotal es autoritativo del servidor'),
+  body('total').not().exists().withMessage('El total es autoritativo del servidor'),
+  body('finalTotal').not().exists().withMessage('El total final es autoritativo del servidor'),
+  body('discount').not().exists().withMessage('El descuento es autoritativo del servidor'),
+  body('couponDiscount').not().exists().withMessage('El descuento de cupón es autoritativo del servidor'),
+  body('promotionDiscount').not().exists().withMessage('El descuento de promoción es autoritativo del servidor'),
+  body('appliedPromotions').not().exists().withMessage('Las promociones aplicadas son autoritativas del servidor'),
   body('cashRegister').isString().trim().notEmpty().withMessage('Caja requerida'),
   body('shiftId').isMongoId().withMessage('Turno abierto requerido'),
   body('payment.method').isIn(['cash', 'card', 'transfer', 'mixed']).withMessage('Metodo de pago invalido'),
@@ -65,6 +72,53 @@ const validateSale = [
   body('payment.reference').optional().isString().trim(),
   body('payment.cashAmount').optional().isFloat({ min: 0 }),
   body('payment.cardAmount').optional().isFloat({ min: 0 }),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
+const promotionFields = optional => [
+  body('name')[optional ? 'optional' : 'exists']().isString().trim().notEmpty().isLength({ max: 160 }),
+  body('description').optional().isString().isLength({ max: 2000 }),
+  body('status').optional().isIn(['draft', 'active', 'paused', 'archived']),
+  body('startsAt')[optional ? 'optional' : 'exists']().isISO8601().withMessage('Inicio de promoción inválido'),
+  body('endsAt')[optional ? 'optional' : 'exists']().isISO8601().withMessage('Fin de promoción inválido'),
+  body('priority').optional().isFloat(),
+  body('branches').optional().isArray(),
+  body('branches.*').optional().isMongoId().withMessage('Sucursal inválida'),
+  body('audience').optional().isObject(),
+  body('audience.type').optional().isIn(['all', 'customers']),
+  body('audience.customerIds').optional().isArray(),
+  body('audience.customerIds.*').optional().isMongoId(),
+  body('conditions').optional().isArray(),
+  body('conditions.*.type').optional().isIn(['minimum_purchase', 'minimum_quantity', 'products', 'categories']),
+  body('conditions.*.amount').optional().isFloat({ min: 0 }),
+  body('conditions.*.quantity').optional().isFloat({ min: 0 }),
+  body('conditions.*.productIds').optional().isArray(),
+  body('conditions.*.productIds.*').optional().isMongoId(),
+  body('conditions.*.categoryIds').optional().isArray(),
+  body('conditions.*.categoryIds.*').optional().isMongoId(),
+  body('benefit')[optional ? 'optional' : 'exists']().isObject().withMessage('Beneficio requerido'),
+  body('benefit.type')[optional ? 'optional' : 'exists']().isIn(['percentage', 'fixed_amount', 'quantity_price', 'buy_x_get_y']),
+  body('benefit.scope').optional().isIn(['line', 'cart']),
+  body('benefit.value').optional().isFloat({ gt: 0 }),
+  body('benefit.bundlePrice').optional().isFloat({ min: 0 }),
+  body('benefit.quantity').optional().isInt({ min: 1 }),
+  body('benefit.buyQuantity').optional().isInt({ min: 1 }),
+  body('benefit.getQuantity').optional().isInt({ min: 1 }),
+  body('taxPolicyVersion').optional().equals('promotion_v1_before_tax'),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
+const validatePromotionSimulation = [
+  body('products').isArray({ min: 1 }).withMessage('Productos requeridos'),
+  body('products.*.productId').isMongoId().withMessage('Producto inválido'),
+  body('products.*.variantId').optional({ nullable: true }).isMongoId().withMessage('Variante inválida'),
+  body('products.*.quantity').isInt({ min: 1 }).withMessage('Cantidad inválida'),
+  body('products.*.price').not().exists().withMessage('El precio es autoritativo del servidor'),
+  body('customerId').optional({ nullable: true }).isMongoId(),
+  body('branchId').optional({ nullable: true }).isMongoId(),
+  body('at').optional().isISO8601(),
   ...forbiddenTenantFields,
   handleValidationErrors
 ];
@@ -225,12 +279,14 @@ const supplierFields = optional => [
 ];
 
 const validatePurchaseReceiptCreate = [
+  body('branchId').optional().isMongoId().withMessage('Sucursal invalida'),
   body('supplierId').isMongoId().withMessage('Proveedor invalido'),
   body('reference').isString().trim().notEmpty().isLength({ max: 120 }).withMessage('Referencia requerida'),
   body('receivedAt').optional().isISO8601().withMessage('Fecha de recepción invalida'),
   body('notes').optional().isString().isLength({ max: 2000 }),
   body('items').isArray({ min: 1 }).withMessage('Productos de recepción requeridos'),
   body('items.*.productId').isMongoId().withMessage('Producto invalido'),
+  body('items.*.variantId').optional({ nullable: true }).isMongoId().withMessage('Variante invalida'),
   body('items.*.quantity').isFloat({ gt: 0 }).withMessage('Cantidad debe ser mayor a cero'),
   body('items.*.unitCost').isFloat({ min: 0 }).withMessage('Costo unitario invalido'),
   ...forbiddenTenantFields,
@@ -238,18 +294,22 @@ const validatePurchaseReceiptCreate = [
 ];
 
 const validatePhysicalCountCreate = [
+  body('branchId').optional().isMongoId().withMessage('Sucursal invalida'),
   body('reference').isString().trim().notEmpty().isLength({ max: 120 }).withMessage('Referencia de conteo requerida'),
   body('countedAt').optional().isISO8601().withMessage('Fecha de conteo invalida'),
   body('notes').optional().isString().isLength({ max: 2000 }),
   body('items').isArray({ min: 1 }).withMessage('Productos de conteo requeridos'),
   body('items.*.productId').isMongoId().withMessage('Producto invalido'),
+  body('items.*.variantId').optional({ nullable: true }).isMongoId().withMessage('Variante invalida'),
   body('items.*.countedQuantity').isFloat({ min: 0 }).withMessage('Cantidad contada invalida'),
   ...forbiddenTenantFields,
   handleValidationErrors
 ];
 
 const validateInventoryAdjustmentCreate = [
+  body('branchId').optional().isMongoId().withMessage('Sucursal invalida'),
   body('productId').isMongoId().withMessage('Producto invalido'),
+  body('variantId').optional({ nullable: true }).isMongoId().withMessage('Variante invalida'),
   body('type').isIn(['increase', 'decrease', 'set']).withMessage('Tipo de ajuste invalido'),
   body('quantity').isFloat({ min: 0 }).withMessage('Cantidad invalida'),
   body('reason').isString().trim().notEmpty().isLength({ max: 1000 }).withMessage('Motivo requerido'),
@@ -263,6 +323,18 @@ const validateInventoryApproval = [
   handleValidationErrors
 ];
 
+const validateStockTransferCreate = [
+  body('originBranchId').isMongoId().withMessage('Sucursal origen invalida'),
+  body('destinationBranchId').isMongoId().withMessage('Sucursal destino invalida'),
+  body('reason').optional().isString().trim().isLength({ max: 1000 }),
+  body('items').isArray({ min: 1 }).withMessage('Productos de transferencia requeridos'),
+  body('items.*.productId').isMongoId().withMessage('Producto invalido'),
+  body('items.*.variantId').optional({ nullable: true }).isMongoId().withMessage('Variante invalida'),
+  body('items.*.quantity').isFloat({ gt: 0 }).withMessage('Cantidad debe ser mayor a cero'),
+  ...forbiddenTenantFields,
+  handleValidationErrors
+];
+
 module.exports = {
   validateBrandCreate: namedCreate('Nombre de marca'),
   validateBrandUpdate: namedUpdate,
@@ -271,6 +343,9 @@ module.exports = {
   validateProductCreate: productFields(false),
   validateProductUpdate: productFields(true),
   validateSale,
+  validatePromotionCreate: promotionFields(false),
+  validatePromotionUpdate: promotionFields(true),
+  validatePromotionSimulation,
   validateCustomerCreate: customerFields(false),
   validateCustomerUpdate: customerFields(true),
   validateUserCreate,
@@ -294,5 +369,6 @@ module.exports = {
   validatePhysicalCountCreate,
   validateInventoryAdjustmentCreate,
   validateInventoryApproval,
+  validateStockTransferCreate,
   handleValidationErrors
 };

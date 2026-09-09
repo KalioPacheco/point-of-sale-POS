@@ -6,6 +6,7 @@ const {
   authenticateToken,
   requireRole
 } = require('../../middleware/auth');
+const { requireCompanyScope } = require('../../middleware/tenant');
 const {
   validateUserCreate,
   validateUserUpdate
@@ -95,14 +96,27 @@ const removeUser = function (req, res) {
     });
 };
 
-router.get('/', authenticateToken, requireRole(['admin']), listUsers);
-router.get('/:userId', authenticateToken, requireRole(['admin']), listUsers);
-router.post('/', authenticateToken, requireRole(['admin']), validateUserCreate, addUser);
+const setBranchAssignments = function (req, res) {
+  const companyId = Helper.getCompanyId(req);
+  if (!companyId) return response.error(req, res, 'Company scope is required', 403);
+  return controller.setBranchAssignments(
+    req.params.userId,
+    req.body.assignments,
+    companyId,
+    Helper.getUserId(req)
+  ).then(data => response.success(req, res, data, 200))
+    .catch(err => response.error(req, res, err.message || 'Internal error', err.status || 500, err));
+};
+
+router.get('/', authenticateToken, requireCompanyScope, requireRole(['admin']), listUsers);
+router.get('/:userId', authenticateToken, requireCompanyScope, requireRole(['admin']), listUsers);
+router.post('/', authenticateToken, requireCompanyScope, requireRole(['admin']), validateUserCreate, addUser);
 router.post('/login', loginRateLimit, controller.login);
 router.post('/refresh', controller.refresh);
-router.post('/register', authenticateToken, requireRole(['admin']), validateUserCreate, controller.register);
+router.post('/register', authenticateToken, requireCompanyScope, requireRole(['admin']), validateUserCreate, controller.register);
 router.post('/logout', authenticateToken, logout);
-router.patch('/:userId', authenticateToken, requireRole(['admin']), validateUserUpdate, updateUser);
-router.delete('/:userId', authenticateToken, requireRole(['admin']), removeUser);
+router.patch('/:userId/branch-assignments', authenticateToken, requireCompanyScope, requireRole(['admin']), setBranchAssignments);
+router.patch('/:userId', authenticateToken, requireCompanyScope, requireRole(['admin']), validateUserUpdate, updateUser);
+router.delete('/:userId', authenticateToken, requireCompanyScope, requireRole(['admin']), removeUser);
 
 module.exports = router;

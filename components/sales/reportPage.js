@@ -1,12 +1,25 @@
 const mongoose = require('mongoose');
 const Sale = require('./model');
 const { pageOptions, dateRange } = require('../../helpers/query');
+const { applyBranchScope } = require('../../helpers/branchScope');
 
 module.exports = async function reportPage(filters) {
   if (!mongoose.Types.ObjectId.isValid(filters.companyId)) throw new Error('Company required');
   const { page, limit, skip } = pageOptions(filters);
   const range = dateRange(filters);
   const match = { company: new mongoose.Types.ObjectId(filters.companyId), disable: false };
+  const requestedBranch = filters.branchId;
+  if (requestedBranch) {
+    if (!mongoose.Types.ObjectId.isValid(requestedBranch)) throw new Error('Invalid branch');
+    if (Array.isArray(filters.branchIds)
+      && !filters.branchIds.some(branchId => String(branchId) === String(requestedBranch))) {
+      match._id = { $in: [] };
+    } else {
+      match.branch = new mongoose.Types.ObjectId(requestedBranch);
+    }
+  } else if (Array.isArray(filters.branchIds)) {
+    applyBranchScope(match, 'branch', filters.branchIds.map(branchId => new mongoose.Types.ObjectId(branchId)));
+  }
   if (range) match.$or = [{ createdAt: range }, { 'refundInfo.refundedAt': range }];
   const operationMatch = {};
   if (range) operationMatch.operationDate = range;
@@ -58,7 +71,12 @@ module.exports = async function reportPage(filters) {
     totalIngresos: raw.totalIngresos || 0,
     promedioVenta: raw.totalVentas ? raw.grossRevenue / raw.totalVentas : 0
   };
-  const items = await Sale.populate(data.items, [{ path: 'createdBy', select: 'name userName' }, { path: 'customer', select: 'name nombre' }]);
+  const items = await Sale.populate(data.items, [
+    { path: 'createdBy', select: 'name userName' },
+    { path: 'customer', select: 'name nombre' },
+    { path: 'branch', select: 'code name address' },
+    { path: 'cashRegisterId', select: 'code name' },
+  ]);
   items.forEach(item => { if (item.operationType === 'refund') item._id = `refund-${item._id}`; });
   return { items, total: raw.total || 0, page, limit, summary, topProducts: data.topProducts };
 };

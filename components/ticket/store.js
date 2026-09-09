@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const { amountRow } = require('./pdfLayout');
 const mongoose = require('mongoose');
+const { applyBranchScope } = require('../../helpers/branchScope');
 const Model = require('./model');
 const SalesModel = require('../sales/model');
 const CashRegisterCutsModel = require('../cashRegisterCuts/model');
@@ -10,6 +11,8 @@ const { Product, StockHistory } = require('../products/model');
 const CashMovement = require('../cashMovements/model');
 const Coupon = require('../coupons/model');
 const CashRegisterShift = require('../cashRegisterShifts/model');
+const branchInventory = require('../inventory/branchInventory');
+const Branch = require('../branches/model');
 
 const DEFAULT_STORE_CONFIG = {
   name: 'Nombre de la Empresa',
@@ -46,6 +49,24 @@ const formatCompanyAddress = (address) => {
 
   const formatted = [line1, city, state, country].filter(Boolean).join(', ');
   return formatted || DEFAULT_STORE_CONFIG.address;
+};
+
+const formatBranchAddress = (address) => {
+  if (!address || typeof address !== 'object') return '';
+  return [address.street, address.city, address.state, address.country, address.postalCode]
+    .map(cleanString)
+    .filter(Boolean)
+    .join(', ');
+};
+
+const branchSnapshot = async (branch, companyId, session = null) => {
+  const branchId = branch?._id || branch?.id || branch;
+  if (!branchId) return undefined;
+  const query = Branch.findOne({ _id: branchId, company: companyId }).select('name address').lean();
+  if (session) query.session(session);
+  const resolved = await query;
+  if (!resolved) return undefined;
+  return { name: resolved.name, address: formatBranchAddress(resolved.address) };
 };
 
 const mapCompanyToStoreConfig = (company) => {
@@ -225,7 +246,8 @@ async function createTicket(ticketData) {
       notes: ticketData.notes,
       company: companyId,
       taxBreakdown: normalizeTaxBreakdown(ticketData.taxBreakdown),
-      appliedCoupon: normalizeAppliedCoupon(ticketData.appliedCoupon, ticketData.totals)
+      appliedCoupon: normalizeAppliedCoupon(ticketData.appliedCoupon, ticketData.totals),
+      appliedPromotions: Array.isArray(ticketData.appliedPromotions) ? ticketData.appliedPromotions : [],
     });
 
     newTicket.calculateTotals();
@@ -243,7 +265,8 @@ async function createTicket(ticketData) {
         totalTaxes: savedTicket.totals.totalTaxes,
         taxBreakdown: savedTicket.taxBreakdown,
         discounts: savedTicket.totals.discounts,
-        appliedCoupon: savedTicket.appliedCoupon
+        appliedCoupon: savedTicket.appliedCoupon,
+        appliedPromotions: savedTicket.appliedPromotions,
       },
       message: `Ticket ${ticketNumber} created`
     };
@@ -254,7 +277,9 @@ async function createTicket(ticketData) {
   }
 }
 
-const mapSaleToTicketData = (sale, storeInfo, companyId) => {
+const mapSaleToTicketData = async (sale, storeInfo, companyId) => {
+  const branch = sale.branch?._id || sale.branch;
+  const cashRegisterId = sale.cashRegisterId?._id || sale.cashRegisterId;
   const items = sale.products?.length > 0
     ? sale.products.map(item => {
         const quantity = item.quantity || 1;
@@ -276,6 +301,7 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
           productName: item.priceSnapshot?.name || item.productId?.name || 'Producto',
           quantity,
           unitPrice,
+          discount: item.discountAmount || 0,
           subtotal,
           totalPrice: item.total || (subtotal + totalTaxes),
           taxes,
@@ -298,6 +324,9 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
     storeInfo,
     transactionInfo: {
       date: sale.createdAt,
+      branch,
+      branchInfo: await branchSnapshot(branch, companyId),
+      cashRegisterId,
       cashRegister: sale.cashRegister || 'CAJA-1',
       cashier: {
         id: sale.createdBy?.id,
@@ -306,10 +335,11 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
     },
     items,
     totals: {
-      subtotal: sale.subtotal || sale.total || 0,
+      subtotal: sale.grossSubtotal ?? sale.subtotal ?? sale.total ?? 0,
       totalTaxes: sale.totalTaxes || 0,
       total: sale.finalTotal || sale.total || 0,
-      discounts: sale.discounts || 0,
+      discounts: sale.promotionDiscount || sale.discounts || 0,
+      promotionDiscount: sale.promotionDiscount || 0,
       couponDiscount: sale.couponDiscount || 0,
       couponCode: sale.couponCode,
       couponName: sale.couponName
@@ -325,6 +355,7 @@ const mapSaleToTicketData = (sale, storeInfo, companyId) => {
       name: sale.couponName,
       discountAmount: sale.couponDiscount || 0
     } : null,
+    appliedPromotions: sale.appliedPromotions || [],
     companyId
   };
 };
@@ -338,7 +369,7 @@ async function createTicketFromSaleWithTaxes(saleId, userId, companyId) {
     if (!sale) throw new Error('Sale not found');
 
     const storeInfo = await getStoreInfo(companyId);
-    const ticketData = mapSaleToTicketData(sale, storeInfo, companyId);
+    const ticketData = await mapSaleToTicketData(sale, storeInfo, companyId);
     
     return createTicket(ticketData);
 
@@ -357,7 +388,7 @@ async function createTicketFromSale(saleId, userId, companyId) {
     if (!sale) throw new Error('Sale not found');
 
     const storeInfo = await getStoreInfo(companyId);
-    const ticketData = mapSaleToTicketData(sale, storeInfo, companyId);
+    const ticketData = await mapSaleToTicketData(sale, storeInfo, companyId);
     ticketData.totals.taxes = sale.taxes || 0;
     delete ticketData.totals.totalTaxes;
     
@@ -372,7 +403,8 @@ async function createTicketFromSale(saleId, userId, companyId) {
 async function createTicketFromCut(cutId, _unusedUserId, companyId) {
   try {
     const cut = await CashRegisterCutsModel.findOne({ _id: cutId, company: companyId })
-      .populate('cashier', 'userName name');
+      .populate('cashier', 'userName name')
+      .populate('branch', 'name address');
 
     if (!cut) throw new Error('Cut not found');
 
@@ -382,6 +414,12 @@ async function createTicketFromCut(cutId, _unusedUserId, companyId) {
       storeInfo: await getStoreInfo(companyId),
       transactionInfo: {
         date: cut.cutDate,
+        branch: cut.branch?._id || cut.branch,
+        branchInfo: cut.branch ? {
+          name: cut.branch.name,
+          address: formatBranchAddress(cut.branch.address),
+        } : undefined,
+        cashRegisterId: cut.cashRegisterId,
         cashRegister: cut.cashRegister,
         cashier: {
           id: cut.cashier.id,
@@ -412,6 +450,9 @@ async function getTickets(filters = {}) {
     if (filters.cashRegister) query['transactionInfo.cashRegister'] = filters.cashRegister;
     if (filters.companyId && filters.companyId !== 'default-company-id') {
       query.company = filters.companyId;
+    }
+    if (Array.isArray(filters.branchIds)) {
+      applyBranchScope(query, 'transactionInfo.branch', filters.branchIds);
     }
 
     if (filters.startDate || filters.endDate) {
@@ -465,7 +506,7 @@ async function getTicketById(ticketId) {
   }
 }
 
-async function getTicketsByDateRange(companyId, startDate, endDate, statuses = ['active']) {
+async function getTicketsByDateRange(companyId, startDate, endDate, statuses = ['active'], branchIds = undefined) {
   try {
     const query = { 
       disable: false,
@@ -475,6 +516,7 @@ async function getTicketsByDateRange(companyId, startDate, endDate, statuses = [
     if (companyId && companyId !== 'default-company-id') {
       query.company = companyId;
     }
+    if (Array.isArray(branchIds)) applyBranchScope(query, 'transactionInfo.branch', branchIds);
 
     if (startDate || endDate) {
       query.createdAt = {};
@@ -500,6 +542,7 @@ async function generateTicketData(ticketId) {
     const couponCode = ticket.appliedCoupon?.code || ticket.totals?.couponCode || null;
     const couponName = ticket.appliedCoupon?.name || ticket.totals?.couponName || null;
     const couponDescription = ticket.appliedCoupon?.description || couponName;
+    const promotion = ticket.appliedPromotions?.[0] || null;
     const discountAmount = ticket.appliedCoupon?.discountAmount
       || ticket.totals?.couponDiscount
       || ticket.totals?.discounts
@@ -516,6 +559,8 @@ async function generateTicketData(ticketId) {
       date: ticket.transactionInfo.date.toLocaleDateString('es-MX'),
       time: ticket.transactionInfo.date.toLocaleTimeString('es-MX'),
       cashRegister: ticket.transactionInfo.cashRegister,
+      branchName: ticket.transactionInfo.branchInfo?.name,
+      branchAddress: ticket.transactionInfo.branchInfo?.address,
       cashier: ticket.transactionInfo.cashier.name
         || ticket.transactionInfo.cashier.id?.name
         || ticket.transactionInfo.cashier.id?.userName,
@@ -546,6 +591,7 @@ async function generateTicketData(ticketId) {
       couponCode,
       couponName,
       couponDescription,
+      promotionName: promotion?.name || null,
       discountAmount
     };
 
@@ -582,6 +628,8 @@ async function generateTicketPDF(ticketId, format, res) {
     doc.moveDown(0.3);
     doc.fontSize(8).text(data.storeAddress, { align: 'center' });
     if (data.taxId) fullText(`RFC: ${data.taxId}`, { align: 'center' });
+    if (data.branchName) fullText(`Sucursal: ${data.branchName}`, { align: 'center' });
+    if (data.branchAddress) fullText(data.branchAddress, { align: 'center' });
     
     if (data.storePhone) {
       doc.moveDown(0.2);
@@ -646,6 +694,11 @@ async function generateTicketPDF(ticketId, format, res) {
       if (data.couponCode) {
         const couponText = data.couponName ? data.couponName : `CUPÓN: ${data.couponCode}`;
         fullText(couponText);
+        doc.moveDown(0.2);
+      }
+
+      if (data.promotionName) {
+        fullText(`PROMOCIÓN: ${data.promotionName}`);
         doc.moveDown(0.2);
       }
 
@@ -796,6 +849,9 @@ async function getTicketStats(filters = {}) {
     if (filters.companyId && filters.companyId !== 'default-company-id') {
       query.company = filters.companyId;
     }
+    if (Array.isArray(filters.branchIds)) {
+      applyBranchScope(query, 'transactionInfo.branch', filters.branchIds);
+    }
 
     if (filters.startDate || filters.endDate) {
       query.createdAt = {};
@@ -845,6 +901,7 @@ const createSaleTicket = async (saleData, userId, companyId, withTaxes = false) 
     const totals = {
       subtotal: saleData.subtotal || 0,
       discounts: saleData.discounts || 0,
+      promotionDiscount: saleData.promotionDiscount || saleData.discounts || 0,
       couponDiscount: saleData.couponDiscount || 0,
       couponCode: saleData.couponCode,
       couponName: saleData.couponName,
@@ -878,6 +935,7 @@ const createSaleTicket = async (saleData, userId, companyId, withTaxes = false) 
       },
       taxBreakdown: withTaxes ? (saleData.taxBreakdown || []) : [],
       appliedCoupon: normalizeAppliedCoupon(saleData.appliedCoupon, totals),
+      appliedPromotions: saleData.appliedPromotions || [],
       notes: saleData.notes,
       companyId
     });
@@ -932,7 +990,20 @@ async function processRefundTicket(refundData, userId, companyId) {
         { $inc: { operationRevision: 1 } }, { new: true, session });
       if (!refundShift) throw new Error('An open cashier shift is required for a refund');
 
-      for (const item of sale.products) {
+      const usesBranchInventory = await branchInventory.companyUsesBranchInventory(companyId, session);
+      if (usesBranchInventory) {
+        if (!sale.branch) throw new Error('The original sale has no branch attribution');
+        if (!refundShift.branch || String(refundShift.branch) !== String(sale.branch)) {
+          throw new Error('Refund must be processed from an open shift in the sale branch');
+        }
+        await branchInventory.restoreSaleItems({
+          items: sale.products,
+          companyId,
+          branchId: sale.branch,
+          actorId: userId,
+          saleId: sale._id,
+        }, session);
+      } else for (const item of sale.products) {
         let previousStock;
         let updateResult;
         if (item.variantId) {
@@ -985,6 +1056,8 @@ async function processRefundTicket(refundData, userId, companyId) {
         refundedBy: userId,
         reason: refundData.reason.trim(),
         shift: refundShift._id,
+        branch: refundShift.branch,
+        cashRegisterId: refundShift.cashRegisterId,
         cashRegister: refundShift.cashRegister
       };
       await sale.save({ session });
@@ -998,6 +1071,8 @@ async function processRefundTicket(refundData, userId, companyId) {
         paymentMethod: sale.payment.method,
         user: userId,
         company: companyId,
+        branch: refundShift.branch,
+        cashRegisterId: refundShift.cashRegisterId,
         cashRegister: refundShift.cashRegister,
         saleReference: sale._id,
         shift: refundShift._id,
@@ -1024,6 +1099,8 @@ async function processRefundTicket(refundData, userId, companyId) {
       };
       const cashier = await UsersModel.findById(userId).session(session).select('name lastNames userName').lean();
       const originalTicket = await Model.findOne({ saleId: sale._id, ticketType: 'sale', company: companyId }).session(session);
+      const refundBranchInfo = originalTicket?.transactionInfo?.branchInfo
+        || await branchSnapshot(refundShift.branch, companyId, session);
       [refundTicket] = await Model.create([{
         ticketNumber: `REFUND-${sale._id}`,
         ticketType: 'refund',
@@ -1032,6 +1109,9 @@ async function processRefundTicket(refundData, userId, companyId) {
         storeInfo: originalTicket?.storeInfo || await getStoreInfo(companyId),
         transactionInfo: {
           date: new Date(),
+          branch: refundShift.branch,
+          branchInfo: refundBranchInfo,
+          cashRegisterId: refundShift.cashRegisterId,
           cashRegister: refundShift.cashRegister,
           customer: originalTicket?.transactionInfo?.customer,
           cashier: { id: userId, name: [cashier?.name, cashier?.lastNames].filter(Boolean).join(' ') || cashier?.userName }
@@ -1041,16 +1121,20 @@ async function processRefundTicket(refundData, userId, companyId) {
           productName: item.priceSnapshot.name,
           quantity: item.quantity,
           unitPrice: item.priceSnapshot.price,
+          discount: item.discountAmount || 0,
           totalTaxes: item.taxAmount,
           totalPrice: item.total,
           variant: item.variantId ? { id: item.variantId, name: item.variantName } : undefined
         })),
         totals: {
-          subtotal: sale.subtotal,
+          subtotal: sale.grossSubtotal ?? sale.subtotal,
           totalTaxes: sale.totalTaxes,
-          discounts: sale.couponDiscount,
+          discounts: sale.promotionDiscount || 0,
+          promotionDiscount: sale.promotionDiscount || 0,
+          couponDiscount: sale.couponDiscount || 0,
           total: sale.finalTotal
         },
+        appliedPromotions: sale.appliedPromotions || [],
         payment: { method: paymentMethods[sale.payment.method], details: {
           cashReceived: sale.payment.cashAmount, cashAmount: sale.payment.cashAmount,
           cardAmount: sale.payment.cardAmount, change: 0

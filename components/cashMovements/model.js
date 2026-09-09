@@ -50,6 +50,8 @@ const cashMovementSchema = new Schema({
     type: Schema.ObjectId,
     ref: 'Companies',
   },
+  branch: { type: Schema.ObjectId, ref: 'Branches', index: true },
+  cashRegisterId: { type: Schema.ObjectId, ref: 'CashRegisters', index: true },
   cashRegister: String,
   saleReference: {
     type: Schema.ObjectId,
@@ -86,6 +88,7 @@ const cashMovementSchema = new Schema({
 });
 
 cashMovementSchema.index({ company: 1, approvalStatus: 1, createdAt: -1, _id: -1 });
+cashMovementSchema.index({ company: 1, branch: 1, createdAt: -1, _id: -1 });
 
 cashMovementSchema.statics.generateMovementNumber = async function generateMovementNumber(
   company,

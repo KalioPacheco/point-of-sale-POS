@@ -29,6 +29,12 @@ const ticketSchema = new Schema({
   
   transactionInfo: {
     date: { type: Date, default: Date.now },
+    branch: { type: Schema.ObjectId, ref: 'Branches' },
+    branchInfo: {
+      name: String,
+      address: String,
+    },
+    cashRegisterId: { type: Schema.ObjectId, ref: 'CashRegisters' },
     cashRegister: { type: String, default: 'CAJA-1' },
     cashier: {
       id: { type: Schema.ObjectId, ref: 'Users' },
@@ -68,6 +74,7 @@ const ticketSchema = new Schema({
     subtotal: { type: Number, default: 0 }, 
     totalTaxes: { type: Number, default: 0 }, 
     discounts: { type: Number, default: 0 },
+    promotionDiscount: { type: Number, default: 0 },
     couponDiscount: { type: Number, default: 0 },
     couponCode: String,
     couponName: String,
@@ -85,6 +92,13 @@ const ticketSchema = new Schema({
     discountValue: Number,
     discountAmount: Number
   },
+  appliedPromotions: [{
+    promotionId: { type: Schema.ObjectId, ref: 'Promotions' },
+    version: Number,
+    name: String,
+    discount: Number,
+    taxPolicyVersion: String,
+  }],
   
   taxBreakdown: [{
     taxId: { type: Schema.ObjectId, ref: 'TaxConfigs' },
@@ -289,10 +303,12 @@ ticketSchema.index({ saleId: 1 });
 ticketSchema.index({ cutId: 1 });
 ticketSchema.index({ 'transactionInfo.cashRegister': 1, createdAt: -1 });
 ticketSchema.index({ company: 1, disable: 1 });
+ticketSchema.index({ company: 1, 'transactionInfo.branch': 1, createdAt: -1, _id: -1 });
 ticketSchema.index({ 'taxBreakdown.taxId': 1 });
 ticketSchema.index({ 'totals.totalTaxes': 1 });
 ticketSchema.index({ 'appliedCoupon.couponId': 1 });
 ticketSchema.index({ 'totals.couponCode': 1 });
 ticketSchema.index({ 'totals.couponDiscount': 1 });
+ticketSchema.index({ 'appliedPromotions.promotionId': 1 });
 
 module.exports = mongoose.model('Tickets', ticketSchema, 'tickets');

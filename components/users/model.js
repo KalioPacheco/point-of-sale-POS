@@ -3,6 +3,14 @@ const bcrypt = require('bcryptjs');
 
 const { Schema } = mongoose;
 
+const branchAssignmentSchema = new Schema({
+  branch: { type: Schema.ObjectId, ref: 'Branches', required: true },
+  defaultCashRegister: { type: Schema.ObjectId, ref: 'CashRegisters' },
+  active: { type: Boolean, default: true },
+  assignedBy: { type: Schema.ObjectId, ref: 'Users' },
+  assignedAt: { type: Date, default: Date.now },
+}, { _id: false });
+
 const mySchema = new Schema(
   {
     name: String,
@@ -45,6 +53,7 @@ const mySchema = new Schema(
       ref: 'Companies',
       required: true,
     },
+    branchAssignments: { type: [branchAssignmentSchema], default: [] },
     privileges: {
       full: {
         type: Boolean,
@@ -63,6 +72,8 @@ const mySchema = new Schema(
   },
   { timestamps: true },
 );
+
+mySchema.index({ company: 1, 'branchAssignments.branch': 1, disable: 1 });
 
 mySchema.pre('save', function (next) {
   const user = this;

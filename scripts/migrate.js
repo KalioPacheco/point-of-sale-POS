@@ -3,7 +3,10 @@ require('dotenv').config();
 mongoose.set('strictQuery', true);
 
 const migrations = [
-  require('../migrations/001-operational-baseline')
+  require('../migrations/001-operational-baseline'),
+  require('../migrations/002-multi-branch-foundation'),
+  require('../migrations/003-inventory-by-branch'),
+  require('../migrations/004-inventory-level-unique-key')
 ];
 
 const command = process.argv[2] || 'status';
@@ -66,11 +69,15 @@ async function run() {
       throw new Error(`Set MIGRATION_CONFIRM_DB=${databaseName} to apply this migration`);
     }
 
+    // Index DDL cannot run inside a MongoDB transaction. A migration may
+    // provide an idempotent prepare hook for DDL; it runs only after the same
+    // explicit database confirmation as the transactional data mutation.
+    const preparation = migration.prepare ? await migration.prepare({ db }) : undefined;
     const session = await mongoose.startSession();
     let result;
     try {
       await session.withTransaction(async () => {
-        result = await migration.up({ db, session });
+        result = { ...(await migration.up({ db, session })), ...(preparation || {}) };
         await db.collection('_migrations').insertOne({
           _id: migration.id,
           description: migration.description,
