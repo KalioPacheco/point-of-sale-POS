@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const { createHttpAccess } = require('./middleware/httpAccess');
+const { createPublicLeadOriginGuard } = require('./middleware/publicLeadAccess');
 const { refreshDurationMs, refreshCookieOptions } = require('./components/users/session');
 
 function validateConfig(env = process.env) {
@@ -17,6 +18,7 @@ function validateConfig(env = process.env) {
   catch { throw new Error('Refresh-token configuration is invalid'); }
   if (!env.CORS_ORIGINS?.trim()) throw new Error('CORS_ORIGINS is required');
   createHttpAccess(env.CORS_ORIGINS);
+  createPublicLeadOriginGuard(env.PUBLIC_LEAD_ORIGINS);
   return { port, version: env.APP_VERSION || 'unknown', environment: env.APP_ENV || env.NODE_ENV || 'development' };
 }
 

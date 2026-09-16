@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
-const { createHttpAccess, PUBLIC_POS_ORIGIN } = require('../middleware/httpAccess');
+const {
+  createHttpAccess,
+  PUBLIC_POS_ORIGIN,
+  PUBLIC_LANDING_ORIGIN,
+} = require('../middleware/httpAccess');
 
 test('CORS rejects malformed configuration and wildcard origins', () => {
   for (const origin of ['*', 'null', 'https://*.vercel.app', 'https://example.com/path',
@@ -36,6 +40,14 @@ test('HTTP access permits exact first-party origins without weakening authentica
       assert.match(res.headers.get('access-control-allow-methods'), /POST/);
     });
   }
+  await t.test('preflight authorizes the POS landing exactly', async () => {
+    const res = await fetch(baseUrl + '/public/leads', { method: 'OPTIONS', headers: {
+      Origin: PUBLIC_LANDING_ORIGIN, 'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type'
+    } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('access-control-allow-origin'), PUBLIC_LANDING_ORIGIN);
+  });
   await t.test('preserves configured origins and headers on unauthorized API responses', async () => {
     const res = await fetch(baseUrl + '/sales', { headers: { Origin: 'https://configured.example' } });
     assert.equal(res.status, 401);

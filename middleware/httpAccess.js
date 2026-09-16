@@ -1,8 +1,9 @@
 const PUBLIC_POS_ORIGIN = 'https://point-of-sale-app-silk.vercel.app';
+const PUBLIC_LANDING_ORIGIN = 'https://pos.automatizalo.dev';
 
 function createHttpAccess(configuredOrigins = process.env.CORS_ORIGINS) {
   // This first-party deployment stays authorized alongside legacy configured origins.
-  const allowedOrigins = new Set([PUBLIC_POS_ORIGIN]);
+  const allowedOrigins = new Set([PUBLIC_POS_ORIGIN, PUBLIC_LANDING_ORIGIN]);
   const entries = (configuredOrigins || 'http://localhost:5173').split(',');
   for (const entry of entries) {
     const value = entry.trim();
@@ -35,4 +36,4 @@ function createHttpAccess(configuredOrigins = process.env.CORS_ORIGINS) {
   };
 }
 
-module.exports = { createHttpAccess, PUBLIC_POS_ORIGIN };
+module.exports = { createHttpAccess, PUBLIC_POS_ORIGIN, PUBLIC_LANDING_ORIGIN };
