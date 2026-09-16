@@ -335,6 +335,35 @@ const validateStockTransferCreate = [
   handleValidationErrors
 ];
 
+const validatePublicLead = [
+  body('name').isString().trim().isLength({ min: 2, max: 120 }).withMessage('Nombre inválido'),
+  body('business').isString().trim().isLength({ min: 2, max: 160 }).withMessage('Negocio inválido'),
+  body('email').isString().trim().isLength({ max: 254 }).isEmail().withMessage('Correo inválido'),
+  body('phone').optional({ checkFalsy: true }).isString().trim()
+    .matches(/^\+?[0-9()\s.-]{7,32}$/).withMessage('Teléfono inválido'),
+  body('contactPreference').optional({ checkFalsy: true })
+    .isIn(['email', 'whatsapp', 'call']).withMessage('Preferencia de contacto inválida'),
+  body('phone').custom((value, { req }) => {
+    if (['whatsapp', 'call'].includes(req.body.contactPreference)
+      && !String(value || '').trim()) {
+      throw new Error('El teléfono es requerido para este medio de contacto');
+    }
+    return true;
+  }),
+  body('whatsappConsent').optional().isBoolean().toBoolean(),
+  body('whatsappConsent').custom((value, { req }) => {
+    if (req.body.contactPreference === 'whatsapp' && value !== true) {
+      throw new Error('Se requiere consentimiento para contacto por WhatsApp');
+    }
+    return true;
+  }),
+  body('message').optional({ checkFalsy: true }).isString().trim()
+    .isLength({ max: 2000 }).withMessage('Mensaje demasiado largo'),
+  body('website').optional().isString().isLength({ max: 200 }).withMessage('Campo inválido'),
+  body('source').optional().equals('point-of-sale-landing').withMessage('Origen inválido'),
+  handleValidationErrors
+];
+
 module.exports = {
   validateBrandCreate: namedCreate('Nombre de marca'),
   validateBrandUpdate: namedUpdate,
@@ -370,5 +399,6 @@ module.exports = {
   validateInventoryAdjustmentCreate,
   validateInventoryApproval,
   validateStockTransferCreate,
+  validatePublicLead,
   handleValidationErrors
 };
