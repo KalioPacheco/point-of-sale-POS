@@ -7,6 +7,7 @@ const config = validateConfig();
 require('./passport');
 const router = require('./routes');
 const db = require('./database');
+const response = require('./network');
 const { createHttpAccess } = require('./middleware/httpAccess');
 
 const app = express();
@@ -26,10 +27,18 @@ app.use((req, res, next) => {
 });
 
 app.use(createHttpAccess());
+app.use('/public/leads', express.json({ limit: '12kb' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(
   express.urlencoded({ limit: '1mb', extended: true, parameterLimit: 1000 }),
 );
+
+app.use((error, req, res, next) => {
+  if (error?.type === 'entity.too.large' || error?.type === 'entity.parse.failed') {
+    return response.error(req, res, error, error.type === 'entity.too.large' ? 413 : 400, error);
+  }
+  return next(error);
+});
 
 app.use(passport.initialize());
 

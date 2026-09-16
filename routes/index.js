@@ -17,10 +17,12 @@ const inventory = require('../components/inventory/network');
 const branches = require('../components/branches/network');
 const cashRegisters = require('../components/cashRegisters/network');
 const promotions = require('../components/promotions/network');
+const publicLeads = require('../components/publicLeads/network');
 const response = require('../network');
 
 const routes = function routes(server) {
 
+  server.use('/public/leads', publicLeads);
   server.use('/brands', brand);
   server.use('/products', products);
   server.use('/users', users);

@@ -1,4 +1,6 @@
 function inferStatus(error, fallback = 500) {
+  if (error?.type === 'entity.too.large') return 413;
+  if (error?.type === 'entity.parse.failed') return 400;
   if (error?.code === 'STOCK_CONFLICT') return 409;
   if (error?.code === 'INSUFFICIENT_STOCK') return 409;
   if (error?.code === 11000) return 409;
@@ -22,6 +24,8 @@ function errorCode(status, error) {
     404: 'RESOURCE_NOT_FOUND',
     409: 'CONFLICT',
     410: 'RESOURCE_GONE',
+    413: 'PAYLOAD_TOO_LARGE',
+    415: 'UNSUPPORTED_MEDIA_TYPE',
     422: 'VALIDATION_ERROR',
     429: 'RATE_LIMITED',
     500: 'INTERNAL_ERROR'
